@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>GESTÃO CONCENAL</title>
+    <title>GESTÃO CONCENAL V10.2</title>
     
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
@@ -178,6 +178,10 @@
                 <div class="p-4 bg-gray-50 border-t flex justify-end" id="attendance-actions">
                     <button onclick="saveDailyAttendance()" class="bg-school-green hover:bg-green-700 text-white px-6 py-2 rounded shadow font-bold text-sm">Salvar Chamada</button>
                 </div>
+                <div id="empty-state-attendance" class="hidden p-12 text-center text-gray-500">
+                    <i class="fas fa-calendar-times text-4xl mb-3 text-gray-300"></i>
+                    <p>Nenhum aluno nesta turma para esta data.</p>
+                </div>
             </div>
 
             <!-- Visão: Diário -->
@@ -284,6 +288,36 @@
         </div>
     </div>
 
+    <!-- Gestão de Usuários (Admin) -->
+    <div id="modal-users" class="fixed inset-0 bg-black bg-opacity-70 hidden z-[90] flex items-center justify-center p-4 backdrop-blur-sm">
+        <div class="bg-white rounded-lg shadow-2xl w-full max-w-lg flex flex-col max-h-[90vh]">
+            <div class="p-4 border-b flex justify-between items-center bg-gray-50 rounded-t-lg">
+                <h3 class="font-bold text-gray-800">Gestão de Acessos</h3>
+                <button onclick="closeModal('modal-users')" class="text-gray-400 hover:text-red-500"><i class="fas fa-times"></i></button>
+            </div>
+            <div class="p-4 overflow-y-auto">
+                <div class="flex gap-2 mb-4 border-b">
+                    <button onclick="switchUserTab('teacher')" id="tab-teacher" class="px-3 py-1 font-bold text-sm border-b-2 border-school-green text-school-green">Professores</button>
+                    <button onclick="switchUserTab('parent')" id="tab-parent" class="px-3 py-1 font-bold text-sm text-gray-500">Pais</button>
+                </div>
+                <div class="bg-blue-50 p-4 rounded-lg mb-4 border border-blue-100">
+                    <div class="grid grid-cols-1 gap-2 mb-2">
+                        <input type="text" id="new-u-name" placeholder="Nome" class="border p-2 rounded text-sm">
+                        <input type="text" id="new-u-login" placeholder="Login" class="border p-2 rounded text-sm">
+                        <input type="text" id="new-u-pass" placeholder="Senha" class="border p-2 rounded text-sm">
+                        <div id="field-teacher-subj"><select id="new-u-subject" class="w-full border p-2 rounded text-sm"></select></div>
+                        <div id="field-parent-student" class="hidden">
+                            <input type="text" id="new-u-student-id" placeholder="ID do Aluno (Copie da lista de alunos)" class="border p-2 rounded text-sm w-full">
+                            <p class="text-[10px] text-gray-500 mt-1">*Copie o ID que aparece abaixo do nome do aluno na tabela de Notas.</p>
+                        </div>
+                    </div>
+                    <button onclick="createUser()" class="w-full bg-blue-600 hover:bg-blue-700 text-white py-2 rounded text-sm font-bold">Criar Acesso</button>
+                </div>
+                <div id="users-list" class="space-y-2 text-sm"></div>
+            </div>
+        </div>
+    </div>
+
     <!-- Relatório Individual -->
     <div id="modal-report" class="fixed inset-0 bg-black bg-opacity-70 hidden z-[70] flex items-center justify-center p-4 backdrop-blur-sm overflow-y-auto">
         <div id="modal-report-content" class="bg-white rounded-lg shadow-2xl w-full max-w-2xl flex flex-col">
@@ -343,6 +377,7 @@
         let currentStudentForReport = null;
         let currentJustificationDate = null;
         let currentJustificationStudentId = null;
+        let creatingUserType = 'teacher';
 
         const today = new Date().toISOString().split('T')[0];
         const SUBJECTS = ["Matemática", "Português", "Geografia", "História", "Arte", "Educação Física", "Inglês", "Ciências"];
@@ -368,6 +403,7 @@
             document.getElementById('attendance-date').value = today;
             document.getElementById('daily-date').value = today;
             populateSubjectSelect();
+            populateNewUserSubjectSelect();
             
             document.getElementById('attendance-date').onchange = renderAttendanceTable;
             document.getElementById('daily-date').onchange = renderDailyLog;
@@ -512,9 +548,9 @@
             const outEl = document.getElementById(outputId);
             if(outEl.tagName === 'DIV') outEl.innerHTML = "Gerando..."; else outEl.value = "Gerando...";
 
-            // Simplified Model List - v1beta default
-            const models = ['gemini-1.5-flash', 'gemini-pro'];
+            const models = ['gemini-1.5-flash', 'gemini-1.5-pro', 'gemini-1.0-pro'];
             let resultText = "";
+            let success = false;
 
             for (const model of models) {
                 try {
@@ -525,21 +561,20 @@
                     const data = await response.json();
                     if(data.candidates && data.candidates.length > 0) {
                         resultText = data.candidates[0].content.parts[0].text;
+                        success = true;
                         break;
-                    } else if (data.error) {
-                        console.warn(`Erro no modelo ${model}:`, data.error.message);
                     }
                 } catch(e) { console.error(e); }
             }
 
             if(loadingId) document.getElementById(loadingId).classList.add('hidden');
             
-            if(resultText) {
+            if(success) {
                 if(outEl.tagName === 'DIV') outEl.innerHTML = resultText.replace(/\n/g, '<br>');
                 else outEl.value = resultText;
             } else {
-                alert("Erro ao conectar com a IA. Verifique se sua chave API é válida e se você tem acesso aos modelos.");
-                if(outEl.tagName !== 'DIV') outEl.value = "";
+                alert("Erro ao conectar com a IA. Verifique sua chave.");
+                if(outEl.tagName !== 'DIV') outEl.value = "Erro na geração.";
             }
         }
 
@@ -588,6 +623,7 @@
             if (students.length === 0) { document.getElementById('empty-state').classList.remove('hidden'); return; }
             document.getElementById('empty-state').classList.add('hidden');
 
+            let html = '';
             students.forEach(s => {
                 const subData = ensureSubjectData(s, appData.currentSubject);
                 const calc = calculateStatus(subData);
@@ -597,7 +633,7 @@
                     return false;
                 }).length;
 
-                let rowHtml = `<tr class="hover:bg-gray-50 border-b">
+                html += `<tr class="hover:bg-gray-50 border-b">
                     <td class="px-4 py-3 font-medium text-gray-900 border-r flex justify-between items-center group">
                         <div class="flex flex-col"><span>${s.name}</span>${canEdit ? `<span class="text-[10px] text-gray-400 select-all">ID: ${s.id}</span>` : ''}</div>
                         <div class="flex gap-2"><button onclick="openReportModal('${s.id}')" class="text-gray-400 hover:text-blue-600"><i class="fas fa-file-alt"></i></button>${canEdit ? `<button onclick="deleteStudent('${s.id}')" class="text-gray-300 hover:text-red-500 opacity-0 group-hover:opacity-100"><i class="fas fa-trash"></i></button>` : ''}</div>
@@ -606,11 +642,11 @@
                     const val = subData.units[i] ?? '';
                     const color = (val !== '' && val < 6) ? 'text-red-600 font-bold' : 'text-green-700';
                     const disabled = !canEdit ? 'disabled' : '';
-                    rowHtml += `<td class="px-1 border-l"><input type="number" step="0.1" ${disabled} class="w-full text-center bg-transparent focus:outline-none ${color}" value="${val}" onchange="updateGrade('${s.id}', ${i}, this.value)"></td>`;
+                    html += `<td class="px-1 border-l"><input type="number" step="0.1" ${disabled} class="w-full text-center bg-transparent focus:outline-none ${color}" value="${val}" onchange="updateGrade('${s.id}', ${i}, this.value)"></td>`;
                 }
-                rowHtml += `<td class="px-1 text-center font-bold text-blue-800 border-l cursor-pointer" onclick="showHistory('${s.id}')">${totalFaults}</td><td class="px-2 text-center font-bold border-l">${calc.average}</td><td class="px-1 border-l"><input type="number" step="0.1" ${!canEdit || calc.average >= 6 ? 'disabled' : ''} class="w-full text-center ${calc.average >= 6 ? 'bg-gray-100' : 'bg-red-50 text-red-700'}" value="${subData.recovery ?? ''}" onchange="updateRecovery('${s.id}', this.value)"></td><td class="px-2 text-center text-[10px] font-bold uppercase border-l ${calc.statusClass}">${calc.status}</td></tr>`;
-                tbody.innerHTML += rowHtml;
+                html += `<td class="px-1 text-center font-bold text-blue-800 border-l cursor-pointer" onclick="showHistory('${s.id}')">${totalFaults}</td><td class="px-2 text-center font-bold border-l">${calc.average}</td><td class="px-1 border-l"><input type="number" step="0.1" ${!canEdit || calc.average >= 6 ? 'disabled' : ''} class="w-full text-center ${calc.average >= 6 ? 'bg-gray-100' : 'bg-red-50 text-red-700'}" value="${subData.recovery ?? ''}" onchange="updateRecovery('${s.id}', this.value)"></td><td class="px-2 text-center text-[10px] font-bold uppercase border-l ${calc.statusClass}">${calc.status}</td></tr>`;
             });
+            tbody.innerHTML = html;
         }
 
         let tempAttendance = {};
@@ -622,6 +658,13 @@
             const students = getStudentsByClass();
             tempAttendance = {};
 
+            if (students.length === 0) {
+                document.getElementById('empty-state-attendance').classList.remove('hidden');
+                return;
+            }
+            document.getElementById('empty-state-attendance').classList.add('hidden');
+
+            let html = '';
             students.forEach(s => {
                 const subData = ensureSubjectData(s, appData.currentSubject);
                 const record = subData.attendance[date]; 
@@ -635,8 +678,9 @@
                 let btnText = status === 'P' ? "PRESENTE" : (isJustified ? "JUSTIFICADO" : "FALTOU");
                 let attachBtn = (status==='F'||isJustified) ? (currentUser.role==='parent' ? `<button onclick="openJustifyModal('${s.id}')" class="ml-2 text-xs text-blue-500 underline">Justificar</button>` : (hasDoc ? `<button onclick="viewDoc('${s.id}', '${date}')" class="ml-2 text-xs text-blue-500"><i class="fas fa-paperclip"></i></button>` : '')) : '';
 
-                tbody.innerHTML += `<tr><td class="px-6 py-4 font-bold text-gray-700 flex justify-between items-center">${s.name} ${attachBtn}</td><td class="px-6 py-4 text-center"><button id="btn-att-${s.id}" onclick="toggleAttendance('${s.id}')" ${currentUser.role==='parent'?'disabled':''} class="w-32 py-2 rounded shadow text-xs font-bold border ${btnClass}">${btnText}</button></td></tr>`;
+                html += `<tr><td class="px-6 py-4 font-bold text-gray-700 flex justify-between items-center">${s.name} ${attachBtn}</td><td class="px-6 py-4 text-center"><button id="btn-att-${s.id}" onclick="toggleAttendance('${s.id}')" ${currentUser.role==='parent'?'disabled':''} class="w-32 py-2 rounded shadow text-xs font-bold border ${btnClass}">${btnText}</button></td></tr>`;
             });
+            tbody.innerHTML = html;
         }
 
         let tempDaily = {};
@@ -647,14 +691,16 @@
             const students = getStudentsByClass();
             const canEdit = currentUser.role !== 'parent';
 
+            let html = '';
             students.forEach(s => {
                 const subData = ensureSubjectData(s, appData.currentSubject);
                 const todayLog = (subData.dailyLogs || {})[date] || { homework: false, behavior: 'Normal' };
                 tempDaily[s.id] = { ...todayLog };
                 const hwClass = todayLog.homework ? 'bg-green-500 text-white' : 'bg-gray-200 text-gray-400';
                 
-                tbody.innerHTML += `<tr class="border-b"><td class="px-4 py-3 font-medium">${s.name}</td><td class="px-2 py-3 text-center"><button onclick="toggleHomework('${s.id}')" ${!canEdit?'disabled':''} class="w-8 h-8 rounded-full shadow transition ${hwClass}"><i class="fas fa-home"></i></button></td><td class="px-2 py-3 text-center"><select onchange="updateBehavior('${s.id}', this.value)" ${!canEdit?'disabled':''} class="border rounded text-xs p-1 font-bold"><option ${todayLog.behavior==='Normal'?'selected':''}>Normal</option><option ${todayLog.behavior==='Excelente'?'selected':''}>Excelente</option><option ${todayLog.behavior==='Conversou'?'selected':''}>Conversou</option><option ${todayLog.behavior==='Ruim'?'selected':''}>Ruim</option></select></td></tr>`;
+                html += `<tr class="border-b"><td class="px-4 py-3 font-medium">${s.name}</td><td class="px-2 py-3 text-center"><button onclick="toggleHomework('${s.id}')" ${!canEdit?'disabled':''} class="w-8 h-8 rounded-full shadow transition ${hwClass}"><i class="fas fa-home"></i></button></td><td class="px-2 py-3 text-center"><select onchange="updateBehavior('${s.id}', this.value)" ${!canEdit?'disabled':''} class="border rounded text-xs p-1 font-bold"><option ${todayLog.behavior==='Normal'?'selected':''}>Normal</option><option ${todayLog.behavior==='Excelente'?'selected':''}>Excelente</option><option ${todayLog.behavior==='Conversou'?'selected':''}>Conversou</option><option ${todayLog.behavior==='Ruim'?'selected':''}>Ruim</option></select></td></tr>`;
             });
+            tbody.innerHTML = html;
         }
 
         // --- LOGIC HELPERS ---
@@ -699,7 +745,24 @@
                 c.appendChild(btn);
             });
         }
-        function ensureSubjectData(s, subj) { if(!s.subjects) s.subjects={}; if(!s.subjects[subj]) s.subjects[subj] = { units: [null,null,null,null,null,null], attendance: {}, dailyLogs: {}, observation: "" }; return s.subjects[subj]; }
+        function ensureSubjectData(s, subj) { 
+            if(!s.subjects) s.subjects = {};
+            if(!s.subjects[subj]) {
+                s.subjects[subj] = { 
+                    units: [null,null,null,null,null,null], 
+                    attendance: {}, 
+                    dailyLogs: {}, 
+                    observation: "" 
+                };
+            } else {
+                // Migração/Garantia de integridade para dados existentes
+                if(!s.subjects[subj].units) s.subjects[subj].units = [null,null,null,null,null,null];
+                if(!s.subjects[subj].attendance) s.subjects[subj].attendance = {};
+                if(!s.subjects[subj].dailyLogs) s.subjects[subj].dailyLogs = {};
+                if(typeof s.subjects[subj].observation === 'undefined') s.subjects[subj].observation = "";
+            }
+            return s.subjects[subj]; 
+        }
         function calculateStatus(subData) {
             let sum=0; subData.units.forEach(u => { if(u) sum+=parseFloat(u) });
             let avg = (sum/6).toFixed(1);
@@ -731,9 +794,11 @@
         function deleteStudent(id) { if(confirm("Excluir?")) db.collection('concenal_students').doc(id).delete(); }
         function getStudentsByClass() { return appData.students.filter(s => s.class === appData.currentClass).sort((a,b)=>a.name.localeCompare(b.name)); }
         function populateSubjectSelect() { const sel = document.getElementById('subject-select'); sel.innerHTML = SUBJECTS.map(s => `<option value="${s}">${s}</option>`).join(''); }
-        function populateNewUserSubjectSelect() {} 
+        function populateNewUserSubjectSelect() { const sel = document.getElementById('new-u-subject'); sel.innerHTML = SUBJECTS.map(s => `<option value="${s}">${s}</option>`).join(''); }
         function closeModal(id) { document.getElementById(id).classList.add('hidden'); }
         function openAddModal() { document.getElementById('modal-add').classList.remove('hidden'); }
+        
+        // --- RELATÓRIO CORRIGIDO ---
         function openReportModal(id) { 
             currentStudentForReport=appData.students.find(s=>s.id===id); 
             if(!currentStudentForReport) return alert("Erro ao abrir aluno.");
@@ -751,16 +816,14 @@
             document.getElementById('report-faults').innerText = totalFaults;
             document.getElementById('report-status').innerText = calc.status;
             
-            // Texto da Observação
             const obsField = document.getElementById('report-observation');
             obsField.value = subData.observation || "";
             
-            // Lógica de Pais vs Professor
             const tools = document.getElementById('report-tools');
             if (currentUser.role === 'parent') {
                 tools.classList.add('hidden');
                 obsField.disabled = true;
-                if(!obsField.value) obsField.placeholder = "Nenhuma análise pedagógica disponível.";
+                if(!obsField.value) obsField.value = "Nenhuma análise pedagógica disponível.";
             } else {
                 tools.classList.remove('hidden');
                 obsField.disabled = false;
@@ -777,15 +840,83 @@
         }
         function showHistory(id) { alert("Histórico disponível no relatório completo."); }
         
-        // --- USERS & JUSTIFY (Compact) ---
-        function openJustifyModal(sid) { currentJustificationStudentId=sid; currentJustificationDate=document.getElementById('attendance-date').value; document.getElementById('just-date-display').innerText=`Data: ${currentJustificationDate}`; document.getElementById('modal-justification').classList.remove('hidden'); }
-        function compressImage(file, callback) { const r = new FileReader(); r.readAsDataURL(file); r.onload=e=>{ const i=new Image(); i.src=e.target.result; i.onload=()=>{ const c=document.createElement('canvas'); const scale=400/Math.max(i.width,i.height); c.width=i.width*scale; c.height=i.height*scale; c.getContext('2d').drawImage(i,0,0,c.width,c.height); callback(c.toDataURL('image/jpeg',0.7)); }}; }
-        async function submitJustification() { const r=document.getElementById('just-reason').value; const f=document.getElementById('just-file').files[0]; const save=(b64)=>{ const s=appData.students.find(st=>st.id===currentJustificationStudentId); const sd=ensureSubjectData(s, appData.currentSubject); sd.attendance[currentJustificationDate]={status:'F',justified:true,reason:r,doc:b64}; db.collection('concenal_students').doc(s.id).update({[`subjects.${appData.currentSubject}.attendance`]:sd.attendance}); closeModal('modal-justification'); alert("Enviado!"); renderAttendanceTable(); }; if(f) compressImage(f,save); else save(null); }
-        function viewDoc(sid, d) { const s=appData.students.find(st=>st.id===sid); const r=s.subjects[appData.currentSubject].attendance[d]; if(r&&r.doc) { const w=window.open(""); w.document.write(`<img src="${r.doc}" style="max-width:100%">`); } }
-        let creatingUserType='teacher'; function openUsersModal(){ document.getElementById('modal-users').classList.remove('hidden'); switchUserTab('teacher'); }
-        function switchUserTab(t){ creatingUserType=t; document.getElementById('tab-teacher').className=t==='teacher'?"px-3 py-1 font-bold text-sm border-b-2 border-school-green text-school-green":"px-3 py-1 font-bold text-sm text-gray-500"; document.getElementById('tab-parent').className=t==='parent'?"px-3 py-1 font-bold text-sm border-b-2 border-school-green text-school-green":"px-3 py-1 font-bold text-sm text-gray-500"; document.getElementById('field-teacher-subj').classList.toggle('hidden',t!=='teacher'); document.getElementById('field-parent-student').classList.toggle('hidden',t!=='parent'); loadUsersList(); }
-        async function createUser() { const n=document.getElementById('new-u-name').value; const l=document.getElementById('new-u-login').value; const p=document.getElementById('new-u-pass').value; let ex={role:creatingUserType}; if(creatingUserType==='teacher') ex.subject=document.getElementById('new-u-subject').value; else ex.studentId=document.getElementById('new-u-student-id').value; if(!n||!l||!p) return alert("Preencha tudo"); await db.collection('concenal_users').add({name:n,username:l,password:p,...ex}); alert("Criado!"); loadUsersList(); }
-        function loadUsersList() { const d=document.getElementById('users-list'); d.innerHTML='...'; db.collection('concenal_users').where('role','==',creatingUserType).get().then(s=>{ d.innerHTML=''; s.forEach(doc=>{ const da=doc.data(); d.innerHTML+=`<div class="flex justify-between p-2 bg-gray-50 mb-1 rounded border"><div><b>${da.name}</b> (${da.username})</div><button onclick="db.collection('concenal_users').doc('${doc.id}').delete().then(loadUsersList)" class="text-red-500"><i class="fas fa-trash"></i></button></div>`; }); }); }
+        // --- USERS & GESTÃO (Descompactado) ---
+        function openJustifyModal(sid) { 
+            currentJustificationStudentId=sid; 
+            currentJustificationDate=document.getElementById('attendance-date').value; 
+            document.getElementById('just-date-display').innerText=`Data: ${currentJustificationDate}`; 
+            document.getElementById('modal-justification').classList.remove('hidden'); 
+        }
+        function compressImage(file, callback) { 
+            const r = new FileReader(); 
+            r.readAsDataURL(file); 
+            r.onload=e=>{ 
+                const i=new Image(); 
+                i.src=e.target.result; 
+                i.onload=()=>{ 
+                    const c=document.createElement('canvas'); 
+                    const scale=400/Math.max(i.width,i.height); 
+                    c.width=i.width*scale; 
+                    c.height=i.height*scale; 
+                    c.getContext('2d').drawImage(i,0,0,c.width,c.height); 
+                    callback(c.toDataURL('image/jpeg',0.7)); 
+                }
+            }; 
+        }
+        async function submitJustification() { 
+            const r=document.getElementById('just-reason').value; 
+            const f=document.getElementById('just-file').files[0]; 
+            const save=(b64)=>{ 
+                const s=appData.students.find(st=>st.id===currentJustificationStudentId); 
+                const sd=ensureSubjectData(s, appData.currentSubject); 
+                sd.attendance[currentJustificationDate]={status:'F',justified:true,reason:r,doc:b64}; 
+                db.collection('concenal_students').doc(s.id).update({[`subjects.${appData.currentSubject}.attendance`]:sd.attendance}); 
+                closeModal('modal-justification'); 
+                alert("Enviado!"); 
+                renderAttendanceTable(); 
+            }; 
+            if(f) compressImage(f,save); else save(null); 
+        }
+        function viewDoc(sid, d) { 
+            const s=appData.students.find(st=>st.id===sid); 
+            const r=s.subjects[appData.currentSubject].attendance[d]; 
+            if(r&&r.doc) { const w=window.open(""); w.document.write(`<img src="${r.doc}" style="max-width:100%">`); } 
+        }
+        function openUsersModal(){ 
+            document.getElementById('modal-users').classList.remove('hidden'); 
+            switchUserTab('teacher'); 
+        }
+        function switchUserTab(t){ 
+            creatingUserType=t; 
+            document.getElementById('tab-teacher').className=t==='teacher'?"px-3 py-1 font-bold text-sm border-b-2 border-school-green text-school-green":"px-3 py-1 font-bold text-sm text-gray-500"; 
+            document.getElementById('tab-parent').className=t==='parent'?"px-3 py-1 font-bold text-sm border-b-2 border-school-green text-school-green":"px-3 py-1 font-bold text-sm text-gray-500"; 
+            document.getElementById('field-teacher-subj').classList.toggle('hidden',t!=='teacher'); 
+            document.getElementById('field-parent-student').classList.toggle('hidden',t!=='parent'); 
+            loadUsersList(); 
+        }
+        async function createUser() { 
+            const n=document.getElementById('new-u-name').value; 
+            const l=document.getElementById('new-u-login').value; 
+            const p=document.getElementById('new-u-pass').value; 
+            let ex={role:creatingUserType}; 
+            if(creatingUserType==='teacher') ex.subject=document.getElementById('new-u-subject').value; 
+            else ex.studentId=document.getElementById('new-u-student-id').value; 
+            if(!n||!l||!p) return alert("Preencha tudo"); 
+            await db.collection('concenal_users').add({name:n,username:l,password:p,...ex}); 
+            alert("Criado!"); 
+            loadUsersList(); 
+        }
+        function loadUsersList() { 
+            const d=document.getElementById('users-list'); 
+            d.innerHTML='...'; 
+            db.collection('concenal_users').where('role','==',creatingUserType).get().then(s=>{ 
+                d.innerHTML=''; 
+                s.forEach(doc=>{ 
+                    const da=doc.data(); 
+                    d.innerHTML+=`<div class="flex justify-between p-2 bg-gray-50 mb-1 rounded border"><div><b>${da.name}</b> (${da.username})</div><button onclick="db.collection('concenal_users').doc('${doc.id}').delete().then(loadUsersList)" class="text-red-500"><i class="fas fa-trash"></i></button></div>`; 
+                }); 
+            }); 
+        }
 
         init();
     </script>
