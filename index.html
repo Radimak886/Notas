@@ -246,6 +246,22 @@
         </div>
     </div>
 
+    <!-- NOVO: Excluir em Massa -->
+    <div id="modal-bulk-delete" class="fixed inset-0 bg-black bg-opacity-70 hidden z-[80] flex items-center justify-center p-4">
+        <div class="bg-white rounded-lg p-6 w-full max-w-md border-l-4 border-red-600">
+            <h3 class="font-bold text-lg mb-2 text-red-600">Excluir Alunos em Massa</h3>
+            <p class="text-xs text-gray-500 mb-2">ATENÇÃO: Ação irreversível. Cole os nomes para excluir da turma atual.</p>
+            <textarea id="bulk-delete-list" rows="8" class="w-full border border-red-200 p-2 rounded text-sm mb-4 bg-red-50" placeholder="Nome do Aluno 1&#10;Nome do Aluno 2..."></textarea>
+            <div class="flex justify-between gap-2">
+                <button onclick="bulkDeleteAllClass()" class="px-3 py-2 bg-red-800 text-white rounded text-xs font-bold uppercase hover:bg-red-900" title="Cuidado! Apaga a turma toda.">Limpar Turma</button>
+                <div class="flex gap-2">
+                    <button onclick="closeModal('modal-bulk-delete')" class="px-4 py-2 bg-gray-200 rounded text-sm">Cancelar</button>
+                    <button onclick="bulkDeleteStudents()" class="px-4 py-2 bg-red-600 text-white rounded text-sm font-bold">Excluir Lista</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <!-- Gestão de Usuários (Admin) -->
     <div id="modal-users" class="fixed inset-0 bg-black bg-opacity-70 hidden z-[90] flex items-center justify-center p-4 backdrop-blur-sm">
         <div class="bg-white rounded-lg shadow-2xl w-full max-w-lg flex flex-col max-h-[90vh]">
@@ -406,16 +422,21 @@
         function ensureSubjectData(s, subj) { 
             if (!s.subjects) s.subjects = {};
             if (!s.subjects[subj]) s.subjects[subj] = { units: [null, null, null, null, null, null], attendance: {}, dailyLogs: {}, observations: [] };
+            
             const d = s.subjects[subj];
             if (!d.attendance) d.attendance = {};
             if (!d.dailyLogs) d.dailyLogs = {};
             if (!d.observations) d.observations = [];
+            if (!d.units || !Array.isArray(d.units)) d.units = [null, null, null, null, null, null];
+            
             return d; 
         }
 
         function calculateStatus(d) {
             let sum = 0, filled = 0;
-            d.units.forEach(u => { if (u !== null && u !== "") { sum += parseFloat(u); filled++; } });
+            if(d.units && Array.isArray(d.units)) {
+                d.units.forEach(u => { if (u !== null && u !== "") { sum += parseFloat(u); filled++; } });
+            }
             let avg = (sum / 6).toFixed(1);
             
             const totalFaults = countFaults(d);
@@ -445,6 +466,7 @@
         }
 
         function countFaults(subData) {
+            if(!subData.attendance) return 0;
             return Object.values(subData.attendance).filter(v => {
                 if (v === 'F') return true;
                 if (typeof v === 'object' && v.status === 'F' && !v.justified) return true;
@@ -461,6 +483,7 @@
         function closeModal(id) { document.getElementById(id).classList.add('hidden'); }
         function openAddModal() { document.getElementById('modal-add').classList.remove('hidden'); }
         function showHistory(id) { openReportModal(id); }
+        function openBulkDeleteModal() { document.getElementById('modal-bulk-delete').classList.remove('hidden'); }
 
         // --- INIT ---
         function init() {
@@ -578,7 +601,13 @@
         // --- RENDER TABLES ---
         function renderGradesTable() {
             const canEdit = currentUser.role !== 'parent';
-            document.getElementById('action-buttons').innerHTML = canEdit ? `<button onclick="openAddModal()" class="bg-school-green text-white px-3 py-2 rounded text-sm font-bold shadow mr-2"><i class="fas fa-plus"></i> Aluno</button><button onclick="document.getElementById('modal-import').classList.remove('hidden')" class="bg-blue-600 text-white px-3 py-2 rounded text-sm font-bold shadow"><i class="fas fa-file-import"></i> Importar Lista</button>` : '';
+            let actionBtns = '';
+            if(canEdit) {
+                actionBtns += `<button onclick="openAddModal()" class="bg-school-green text-white px-3 py-2 rounded text-sm font-bold shadow mr-2"><i class="fas fa-plus"></i> Aluno</button>`;
+                actionBtns += `<button onclick="document.getElementById('modal-import').classList.remove('hidden')" class="bg-blue-600 text-white px-3 py-2 rounded text-sm font-bold shadow mr-2"><i class="fas fa-file-import"></i> Importar</button>`;
+                actionBtns += `<button onclick="openBulkDeleteModal()" class="bg-red-600 text-white px-3 py-2 rounded text-sm font-bold shadow"><i class="fas fa-trash-alt"></i> Excluir em Massa</button>`;
+            }
+            document.getElementById('action-buttons').innerHTML = actionBtns;
             
             const tbody = document.getElementById('grades-body'); tbody.innerHTML = '';
             const students = getStudentsByClass();
@@ -708,6 +737,51 @@
         }
         function deleteStudent(id) { if(confirm("Excluir?")) db.collection('concenal_students').doc(id).delete(); }
         
+        // --- BULK DELETE ---
+        async function bulkDeleteStudents() {
+            const list = document.getElementById('bulk-delete-list').value.split('\n').map(n => n.trim()).filter(n => n);
+            if(list.length === 0) return alert("Cole uma lista de nomes.");
+            
+            if(!confirm(`Tem certeza que deseja excluir ${list.length} alunos da turma ${appData.currentClass}?`)) return;
+
+            let batch = db.batch();
+            let deletedCount = 0;
+            const studentsInClass = getStudentsByClass();
+
+            list.forEach(nameToRemove => {
+                // Find student by name (case insensitive match)
+                const student = studentsInClass.find(s => s.name.toLowerCase() === nameToRemove.toLowerCase());
+                if(student) {
+                    batch.delete(db.collection('concenal_students').doc(student.id));
+                    deletedCount++;
+                }
+            });
+
+            if(deletedCount > 0) {
+                await batch.commit();
+                closeModal('modal-bulk-delete');
+                alert(`${deletedCount} alunos excluídos com sucesso!`);
+            } else {
+                alert("Nenhum aluno encontrado com esses nomes na turma atual.");
+            }
+        }
+
+        async function bulkDeleteAllClass() {
+             if(!confirm(`ATENÇÃO: Isso apagará TODOS os alunos da turma ${appData.currentClass}. Tem certeza absoluta?`)) return;
+             
+             const studentsInClass = getStudentsByClass();
+             if(studentsInClass.length === 0) return alert("Turma já está vazia.");
+
+             let batch = db.batch();
+             studentsInClass.forEach(s => {
+                 batch.delete(db.collection('concenal_students').doc(s.id));
+             });
+             
+             await batch.commit();
+             closeModal('modal-bulk-delete');
+             alert("Turma limpa com sucesso.");
+        }
+
         // --- RELATÓRIO MANUAL ---
         function openReportModal(id) { 
             currentStudentForReport=appData.students.find(s=>s.id===id); 
@@ -721,10 +795,14 @@
             document.getElementById('report-freq').innerText = calc.freq + '%';
             document.getElementById('report-status').innerText = calc.status || "--";
             
+            // Fix for missing elements if they were removed from HTML
             const bar = document.getElementById('report-freq-bar');
-            bar.style.width = `${calc.freq}%`;
-            bar.className = `h-1.5 rounded-full ${calc.freq < 75 ? 'bg-red-600' : 'bg-green-600'}`;
-            document.getElementById('report-days-count').innerText = `${calc.faults} Faltas (${(calc.totalDays - calc.faults)}/${calc.totalDays} dias)`;
+            if(bar) {
+                bar.style.width = `${calc.freq}%`;
+                bar.className = `h-1.5 rounded-full ${calc.freq < 75 ? 'bg-red-600' : 'bg-green-600'}`;
+            }
+            const daysCount = document.getElementById('report-days-count');
+            if(daysCount) daysCount.innerText = `${calc.faults} Faltas (${(calc.totalDays - calc.faults)}/${calc.totalDays} dias)`;
 
             renderObservationsList(subData.observations || []);
             
