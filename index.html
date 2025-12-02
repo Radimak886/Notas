@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Portal Contemporâneo - V8 AI</title>
+    <title>GESTÃO CONCENAL</title>
     
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
@@ -37,9 +37,6 @@
         .status-dot { height: 10px; width: 10px; border-radius: 50%; display: inline-block; }
         .status-online { background-color: #10B981; box-shadow: 0 0 5px #10B981; }
         
-        /* Parent View Specifics */
-        .parent-card { border-left: 4px solid #047857; }
-        
         @media print {
             body * { visibility: hidden; }
             #modal-report, #modal-report * { visibility: visible; }
@@ -54,7 +51,7 @@
     <div id="setup-screen" class="fixed inset-0 z-[60] flex items-center justify-center bg-gray-900 text-white hidden">
         <div class="bg-gray-800 p-8 rounded-lg max-w-lg w-full text-center">
             <h2 class="text-2xl font-bold mb-4 text-yellow-400">Configuração Necessária</h2>
-            <p class="text-xs mb-4">Cole sua configuração do Firebase abaixo.</p>
+            <p class="text-xs mb-4">Cole sua configuração do Firebase no código.</p>
             <button onclick="location.reload()" class="bg-blue-600 px-6 py-2 rounded hover:bg-blue-500">Recarregar</button>
         </div>
     </div>
@@ -65,12 +62,12 @@
             <div class="text-center mb-6">
                 <i class="fas fa-school text-5xl text-school-green mb-3"></i>
                 <h1 class="text-xl font-bold text-gray-800 leading-tight">CONTEMPORÂNEO<br>CENTRO EDUCACIONAL</h1>
-                <p class="text-gray-500 text-sm mt-2">Portal Acadêmico & IA</p>
+                <p class="text-gray-500 text-sm mt-2">Portal Acadêmico</p>
             </div>
             <form id="login-form" class="space-y-4">
                 <div>
                     <label class="block text-xs font-bold text-gray-500 uppercase">Usuário</label>
-                    <input type="text" id="username" class="block w-full border border-gray-300 rounded p-2 focus:ring-2 focus:ring-school-green outline-none" placeholder="Ex: admin ou responsavel.ana" required>
+                    <input type="text" id="username" class="block w-full border border-gray-300 rounded p-2 focus:ring-2 focus:ring-school-green outline-none" placeholder="Ex: admin" required>
                 </div>
                 <div>
                     <label class="block text-xs font-bold text-gray-500 uppercase">Senha</label>
@@ -98,7 +95,7 @@
                 <div class="flex items-center gap-3">
                     <i class="fas fa-graduation-cap text-2xl"></i>
                     <div class="leading-tight">
-                        <h1 class="text-sm font-bold tracking-wide uppercase">Contemporâneo</h1>
+                        <h1 class="text-sm font-bold tracking-wide uppercase">CONCENAL</h1>
                         <span class="text-xs text-green-200 block truncate max-w-[150px] sm:max-w-xs" id="user-display-name">...</span>
                     </div>
                 </div>
@@ -114,7 +111,7 @@
                         <button onclick="switchMode('grades')" id="nav-grades" class="px-3 py-1 rounded text-xs sm:text-sm font-bold bg-white text-school-green shadow">Notas</button>
                         <button onclick="switchMode('attendance')" id="nav-attendance" class="px-3 py-1 rounded text-xs sm:text-sm font-bold text-green-100 hover:text-white">Freq.</button>
                         <button onclick="switchMode('daily')" id="nav-daily" class="px-3 py-1 rounded text-xs sm:text-sm font-bold text-green-100 hover:text-white">Diário</button>
-                        <!-- NOVO BOTÃO DE IA -->
+                        <!-- BOTÃO DE IA -->
                         <button onclick="switchMode('ai-tools')" id="nav-ai-tools" class="px-3 py-1 rounded text-xs sm:text-sm font-bold text-green-100 hover:text-white flex items-center gap-1"><i class="fas fa-robot"></i> <span class="hidden sm:inline">IA</span></button>
                     </div>
                     
@@ -153,7 +150,6 @@
                                 <th class="w-16 bg-gray-50 text-gray-800 border-l">Média</th>
                                 <th class="w-20 text-red-600 border-l">Rec</th>
                                 <th class="w-24 border-l">Status</th>
-                                <th class="w-12 border-l">...</th>
                             </tr>
                         </thead>
                         <tbody id="grades-body" class="bg-white divide-y divide-gray-200 text-sm"></tbody>
@@ -212,99 +208,62 @@
             <!-- Visão Ferramentas IA -->
             <div id="view-ai-tools" class="max-w-4xl mx-auto hidden fade-in">
                 
-                <!-- Chave API Global (Aparece se não configurada) -->
                 <div id="global-ai-key-alert" class="bg-yellow-50 border-l-4 border-yellow-400 p-4 mb-6 rounded shadow hidden">
                     <div class="flex items-center justify-between">
                         <div class="flex items-center">
                             <i class="fas fa-key text-yellow-500 mr-2"></i>
-                            <p class="text-sm text-yellow-700">Para usar as ferramentas IA, configure sua chave do Google Gemini.</p>
+                            <p class="text-sm text-yellow-700">Para usar IA, configure sua chave do Google Gemini.</p>
                         </div>
-                        <button onclick="promptApiKey()" class="text-sm font-bold text-yellow-800 hover:underline">Configurar Agora</button>
+                        <button onclick="promptApiKey()" class="text-sm font-bold text-yellow-800 hover:underline">Configurar</button>
                     </div>
                 </div>
 
-                <!-- Painel de Professor (Planos e Provas) -->
+                <!-- Painel Professor -->
                 <div id="ai-panel-teacher" class="grid grid-cols-1 md:grid-cols-2 gap-6">
-                    <!-- Gerador de Plano de Aula -->
                     <div class="bg-white rounded-lg shadow-lg border border-gray-200 overflow-hidden">
-                        <div class="bg-purple-600 p-4 text-white">
-                            <h3 class="font-bold"><i class="fas fa-chalkboard-teacher mr-2"></i> Plano de Aula</h3>
-                            <p class="text-xs text-purple-200">Gere roteiros completos em segundos.</p>
-                        </div>
+                        <div class="bg-purple-600 p-4 text-white"><h3 class="font-bold">Plano de Aula</h3></div>
                         <div class="p-4 space-y-3">
-                            <input id="ai-plan-topic" class="w-full border p-2 rounded text-sm" placeholder="Tema (ex: Frações, Revolução Francesa)">
-                            <div class="flex gap-2">
-                                <input id="ai-plan-duration" class="w-1/2 border p-2 rounded text-sm" placeholder="Duração (ex: 50min)">
-                                <select id="ai-plan-level" class="w-1/2 border p-2 rounded text-sm bg-white">
-                                    <option>Fundamental I</option><option selected>Fundamental II</option><option>Ensino Médio</option>
-                                </select>
-                            </div>
-                            <button onclick="generateLessonPlan()" class="w-full bg-purple-600 hover:bg-purple-700 text-white py-2 rounded font-bold transition flex justify-center items-center gap-2">
-                                <i class="fas fa-magic"></i> Gerar Plano
-                            </button>
-                            <textarea id="ai-plan-output" rows="8" class="w-full border p-2 rounded text-xs bg-gray-50 font-mono" placeholder="O resultado aparecerá aqui..."></textarea>
+                            <input id="ai-plan-topic" class="w-full border p-2 rounded text-sm" placeholder="Tema (ex: Frações)">
+                            <button onclick="generateLessonPlan()" class="w-full bg-purple-600 hover:bg-purple-700 text-white py-2 rounded font-bold">Gerar Plano</button>
+                            <textarea id="ai-plan-output" rows="8" class="w-full border p-2 rounded text-xs bg-gray-50" placeholder="Resultado..."></textarea>
                         </div>
                     </div>
-
-                    <!-- Gerador de Questões -->
                     <div class="bg-white rounded-lg shadow-lg border border-gray-200 overflow-hidden">
-                        <div class="bg-indigo-600 p-4 text-white">
-                            <h3 class="font-bold"><i class="fas fa-tasks mr-2"></i> Criador de Provas</h3>
-                            <p class="text-xs text-indigo-200">Questões objetivas e gabarito.</p>
-                        </div>
+                        <div class="bg-indigo-600 p-4 text-white"><h3 class="font-bold">Criador de Provas</h3></div>
                         <div class="p-4 space-y-3">
-                            <input id="ai-quiz-topic" class="w-full border p-2 rounded text-sm" placeholder="Assunto (ex: Verbos, Fotossíntese)">
-                            <div class="flex gap-2">
-                                <input type="number" id="ai-quiz-count" class="w-1/3 border p-2 rounded text-sm" value="5" min="1" max="10">
-                                <select id="ai-quiz-difficulty" class="w-2/3 border p-2 rounded text-sm bg-white">
-                                    <option>Fácil</option><option selected>Médio</option><option>Difícil</option>
-                                </select>
-                            </div>
-                            <button onclick="generateQuiz()" class="w-full bg-indigo-600 hover:bg-indigo-700 text-white py-2 rounded font-bold transition flex justify-center items-center gap-2">
-                                <i class="fas fa-bolt"></i> Criar Questões
-                            </button>
-                            <textarea id="ai-quiz-output" rows="8" class="w-full border p-2 rounded text-xs bg-gray-50 font-mono" placeholder="Questões geradas aqui..."></textarea>
+                            <input id="ai-quiz-topic" class="w-full border p-2 rounded text-sm" placeholder="Assunto">
+                            <button onclick="generateQuiz()" class="w-full bg-indigo-600 hover:bg-indigo-700 text-white py-2 rounded font-bold">Criar Questões</button>
+                            <textarea id="ai-quiz-output" rows="8" class="w-full border p-2 rounded text-xs bg-gray-50" placeholder="Resultado..."></textarea>
                         </div>
                     </div>
                 </div>
 
-                <!-- Painel de Pais (Tutor) -->
+                <!-- Painel Pais -->
                 <div id="ai-panel-parent" class="hidden">
                     <div class="bg-white rounded-lg shadow-lg border border-gray-200 overflow-hidden max-w-2xl mx-auto">
-                        <div class="bg-green-600 p-4 text-white">
-                            <h3 class="font-bold"><i class="fas fa-user-graduate mr-2"></i> Tutor Virtual</h3>
-                            <p class="text-xs text-green-200">Ajuda para entender a matéria e o dever de casa.</p>
-                        </div>
+                        <div class="bg-green-600 p-4 text-white"><h3 class="font-bold">Tutor Virtual</h3></div>
                         <div class="p-6 space-y-4">
-                            <p class="text-sm text-gray-600">Olá! Eu sou a IA do Contemporâneo. Digite abaixo qual matéria ou exercício seu filho está com dificuldade, e eu explicarei de forma simples para você ajudá-lo.</p>
-                            <textarea id="ai-tutor-prompt" rows="3" class="w-full border p-3 rounded text-sm focus:ring-2 focus:ring-green-500 outline-none" placeholder="Ex: Me explique como funciona a regra de três simples..."></textarea>
-                            <button onclick="generateTutorResponse()" class="w-full bg-green-600 hover:bg-green-700 text-white py-2 rounded font-bold transition shadow">
-                                <i class="fas fa-comment-dots"></i> Perguntar ao Tutor
-                            </button>
+                            <textarea id="ai-tutor-prompt" rows="3" class="w-full border p-3 rounded text-sm" placeholder="Dúvida sobre a matéria..."></textarea>
+                            <button onclick="generateTutorResponse()" class="w-full bg-green-600 hover:bg-green-700 text-white py-2 rounded font-bold">Perguntar</button>
                             <div id="ai-tutor-output" class="bg-green-50 p-4 rounded border border-green-100 text-sm text-gray-800 hidden"></div>
                         </div>
                     </div>
                 </div>
-
             </div>
-
         </main>
     </div>
 
-    <!-- MODAL: UPLOAD ATESTADO -->
-    <div id="modal-justification" class="fixed inset-0 bg-black bg-opacity-70 hidden z-[80] flex items-center justify-center p-4 backdrop-blur-sm">
+    <!-- MODAIS -->
+    <!-- Justificar -->
+    <div id="modal-justification" class="fixed inset-0 bg-black bg-opacity-70 hidden z-[80] flex items-center justify-center p-4">
         <div class="bg-white rounded-lg p-6 w-full max-w-sm">
             <h3 class="font-bold text-lg mb-2 text-school-green">Justificar Falta</h3>
             <p class="text-xs text-gray-500 mb-4" id="just-date-display">--</p>
-            <label class="block text-xs font-bold text-gray-700 mb-1">Motivo</label>
             <select id="just-reason" class="w-full border p-2 rounded text-sm mb-3">
-                <option value="Médico">Atestado Médico</option>
-                <option value="Pessoal">Problemas Pessoais</option>
-                <option value="Doença">Doença sem Atestado</option>
-                <option value="Outro">Outro</option>
+                <option>Médico</option><option>Pessoal</option><option>Outro</option>
             </select>
-            <label class="block text-xs font-bold text-gray-700 mb-1">Anexar Foto</label>
-            <input type="file" id="just-file" accept="image/*" class="w-full text-xs text-gray-500 border p-2 rounded mb-4">
+            <label class="block text-xs font-bold text-gray-700 mb-1">Foto (Opcional)</label>
+            <input type="file" id="just-file" accept="image/*" class="w-full text-xs border p-2 rounded mb-4">
             <div class="flex justify-end gap-2">
                 <button onclick="closeModal('modal-justification')" class="px-4 py-2 bg-gray-200 rounded text-sm">Cancelar</button>
                 <button onclick="submitJustification()" class="px-4 py-2 bg-school-green text-white rounded text-sm font-bold">Enviar</button>
@@ -312,36 +271,20 @@
         </div>
     </div>
 
-    <!-- MODAL: GESTÃO DE USUÁRIOS -->
-    <div id="modal-users" class="fixed inset-0 bg-black bg-opacity-70 hidden z-[90] flex items-center justify-center p-4 backdrop-blur-sm">
-        <div class="bg-white rounded-lg shadow-2xl w-full max-w-lg flex flex-col max-h-[90vh]">
-            <div class="p-4 border-b flex justify-between items-center bg-gray-50 rounded-t-lg">
-                <h3 class="font-bold text-gray-800">Gestão de Acessos</h3>
-                <button onclick="closeModal('modal-users')" class="text-gray-400 hover:text-red-500"><i class="fas fa-times"></i></button>
-            </div>
-            <div class="p-4 overflow-y-auto">
-                <div class="flex gap-2 mb-4 border-b">
-                    <button onclick="switchUserTab('teacher')" id="tab-teacher" class="px-3 py-1 font-bold text-sm border-b-2 border-school-green text-school-green">Professores</button>
-                    <button onclick="switchUserTab('parent')" id="tab-parent" class="px-3 py-1 font-bold text-sm text-gray-500">Pais</button>
-                </div>
-                <div class="bg-blue-50 p-4 rounded-lg mb-4 border border-blue-100">
-                    <div class="grid grid-cols-1 gap-2 mb-2">
-                        <input type="text" id="new-u-name" placeholder="Nome" class="border p-2 rounded text-sm">
-                        <input type="text" id="new-u-login" placeholder="Login" class="border p-2 rounded text-sm">
-                        <input type="text" id="new-u-pass" placeholder="Senha" class="border p-2 rounded text-sm">
-                        <div id="field-teacher-subj"><select id="new-u-subject" class="w-full border p-2 rounded text-sm"></select></div>
-                        <div id="field-parent-student" class="hidden">
-                            <input type="text" id="new-u-student-id" placeholder="ID do Aluno (Copie da lista)" class="border p-2 rounded text-sm w-full">
-                        </div>
-                    </div>
-                    <button onclick="createUser()" class="w-full bg-blue-600 hover:bg-blue-700 text-white py-2 rounded text-sm font-bold">Criar</button>
-                </div>
-                <div id="users-list" class="space-y-2 text-sm"></div>
+    <!-- Importar em Massa (NOVO) -->
+    <div id="modal-import" class="fixed inset-0 bg-black bg-opacity-70 hidden z-[80] flex items-center justify-center p-4">
+        <div class="bg-white rounded-lg p-6 w-full max-w-md">
+            <h3 class="font-bold text-lg mb-2 text-school-green">Importar Alunos</h3>
+            <p class="text-xs text-gray-500 mb-2">Cole a lista de nomes (um por linha) para adicionar à turma atual.</p>
+            <textarea id="import-list" rows="10" class="w-full border p-2 rounded text-sm mb-4" placeholder="Ana Silva&#10;Bruno Costa&#10;Carlos..."></textarea>
+            <div class="flex justify-end gap-2">
+                <button onclick="closeModal('modal-import')" class="px-4 py-2 bg-gray-200 rounded text-sm">Cancelar</button>
+                <button onclick="importStudents()" class="px-4 py-2 bg-blue-600 text-white rounded text-sm font-bold">Importar</button>
             </div>
         </div>
     </div>
 
-    <!-- MODAL RELATÓRIO INDIVIDUAL -->
+    <!-- Relatório Individual -->
     <div id="modal-report" class="fixed inset-0 bg-black bg-opacity-70 hidden z-[70] flex items-center justify-center p-4 backdrop-blur-sm overflow-y-auto">
         <div id="modal-report-content" class="bg-white rounded-lg shadow-2xl w-full max-w-2xl flex flex-col">
             <div class="p-6 border-b flex justify-between items-start bg-gray-50 rounded-t-lg">
@@ -360,9 +303,14 @@
                 <div class="mb-4">
                     <div class="flex justify-between items-center mb-2">
                         <h4 class="font-bold text-gray-700">Análise Pedagógica</h4>
-                        <button onclick="generateReportAnalysis()" class="no-print bg-purple-600 text-white px-3 py-1 rounded text-xs font-bold shadow flex items-center gap-1"><i class="fas fa-magic"></i> IA Gemini</button>
+                        <!-- Botões só aparecem para Professor/Admin -->
+                        <div id="report-tools" class="flex gap-2 no-print">
+                            <button onclick="generateReportAnalysis()" class="bg-purple-600 text-white px-3 py-1 rounded text-xs font-bold shadow flex items-center gap-1"><i class="fas fa-magic"></i> IA Gemini</button>
+                            <button onclick="saveReportObservation()" class="bg-blue-600 text-white px-3 py-1 rounded text-xs font-bold shadow flex items-center gap-1"><i class="fas fa-save"></i> Salvar Parecer</button>
+                        </div>
                     </div>
-                    <textarea id="report-observation" rows="6" class="w-full border border-gray-300 rounded p-3 text-sm focus:ring-2 focus:ring-school-green outline-none" placeholder="Análise..."></textarea>
+                    <textarea id="report-observation" rows="6" class="w-full border border-gray-300 rounded p-3 text-sm focus:ring-2 focus:ring-school-green outline-none" placeholder="O professor ainda não adicionou uma análise."></textarea>
+                    <div id="ai-loading" class="hidden text-center py-2 text-purple-600 text-xs font-bold"><i class="fas fa-spinner fa-spin"></i> Escrevendo relatório...</div>
                 </div>
             </div>
             <div class="p-4 bg-gray-50 rounded-b-lg flex justify-end no-print">
@@ -370,6 +318,9 @@
             </div>
         </div>
     </div>
+
+    <!-- Modal Aux -->
+    <div id="modal-add" class="fixed inset-0 bg-black bg-opacity-60 hidden z-50 flex items-center justify-center p-4"><div class="bg-white rounded p-6 w-full max-w-sm"><h3 class="font-bold mb-4">Adicionar Aluno</h3><input id="new-name" class="border w-full p-2 mb-4 rounded" placeholder="Nome"><div class="flex justify-end gap-2"><button onclick="closeModal('modal-add')" class="bg-gray-200 px-4 py-2 rounded">Cancelar</button><button onclick="addStudent()" class="bg-school-green text-white px-4 py-2 rounded">Salvar</button></div></div></div>
 
     <!-- Script Lógica -->
     <script>
@@ -417,7 +368,6 @@
             document.getElementById('attendance-date').value = today;
             document.getElementById('daily-date').value = today;
             populateSubjectSelect();
-            populateNewUserSubjectSelect();
             
             document.getElementById('attendance-date').onchange = renderAttendanceTable;
             document.getElementById('daily-date').onchange = renderDailyLog;
@@ -486,7 +436,6 @@
                 document.getElementById('attendance-actions').classList.add('hidden');
                 document.getElementById('daily-actions').classList.add('hidden');
                 document.getElementById('nav-daily').innerText = "Diário";
-                // Parent AI View
                 document.getElementById('ai-panel-teacher').classList.add('hidden');
                 document.getElementById('ai-panel-parent').classList.remove('hidden');
             } else {
@@ -538,11 +487,10 @@
             document.getElementById('view-daily').classList.add('hidden');
             document.getElementById('view-ai-tools').classList.add('hidden');
 
-            // Style Buttons
             const resetBtns = () => {
                 ['nav-grades','nav-attendance','nav-daily','nav-ai-tools'].forEach(id => {
                     const el = document.getElementById(id);
-                    el.className = "px-3 py-1 rounded text-xs sm:text-sm font-bold text-green-100 hover:text-white flex items-center gap-1";
+                    if(el) el.className = "px-3 py-1 rounded text-xs sm:text-sm font-bold text-green-100 hover:text-white flex items-center gap-1";
                 });
             };
             resetBtns();
@@ -562,9 +510,9 @@
             
             if(loadingId) document.getElementById(loadingId).classList.remove('hidden');
             const outEl = document.getElementById(outputId);
-            if(outEl.tagName === 'DIV') outEl.innerHTML = "Gerando...";
-            else outEl.value = "Gerando...";
+            if(outEl.tagName === 'DIV') outEl.innerHTML = "Gerando..."; else outEl.value = "Gerando...";
 
+            // Simplified Model List - v1beta default
             const models = ['gemini-1.5-flash', 'gemini-pro'];
             let resultText = "";
 
@@ -575,11 +523,13 @@
                         body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }] })
                     });
                     const data = await response.json();
-                    if(data.candidates) {
+                    if(data.candidates && data.candidates.length > 0) {
                         resultText = data.candidates[0].content.parts[0].text;
                         break;
+                    } else if (data.error) {
+                        console.warn(`Erro no modelo ${model}:`, data.error.message);
                     }
-                } catch(e) { console.log(e); }
+                } catch(e) { console.error(e); }
             }
 
             if(loadingId) document.getElementById(loadingId).classList.add('hidden');
@@ -588,40 +538,30 @@
                 if(outEl.tagName === 'DIV') outEl.innerHTML = resultText.replace(/\n/g, '<br>');
                 else outEl.value = resultText;
             } else {
-                alert("Erro ao conectar com a IA. Verifique sua chave.");
-                if(outEl.tagName === 'DIV') outEl.innerHTML = "Erro.";
-                else outEl.value = "Erro.";
+                alert("Erro ao conectar com a IA. Verifique se sua chave API é válida e se você tem acesso aos modelos.");
+                if(outEl.tagName !== 'DIV') outEl.value = "";
             }
         }
 
         function generateLessonPlan() {
             const topic = document.getElementById('ai-plan-topic').value;
-            const dur = document.getElementById('ai-plan-duration').value;
-            const level = document.getElementById('ai-plan-level').value;
             if(!topic) return alert("Digite o tema!");
-            
-            const prompt = `Crie um plano de aula detalhado para ${level}. Tema: ${topic}. Duração: ${dur}. Estruture com: 1. Objetivos, 2. Introdução, 3. Desenvolvimento, 4. Atividade Prática, 5. Avaliação.`;
+            const prompt = `Crie um plano de aula sobre: ${topic}.`;
             callGemini(prompt, 'ai-plan-output');
         }
 
         function generateQuiz() {
             const topic = document.getElementById('ai-quiz-topic').value;
-            const count = document.getElementById('ai-quiz-count').value;
-            const diff = document.getElementById('ai-quiz-difficulty').value;
             if(!topic) return alert("Digite o assunto!");
-
-            const prompt = `Crie ${count} questões de múltipla escolha (A,B,C,D) sobre ${topic}, nível ${diff}. No final, inclua o gabarito.`;
+            const prompt = `Crie 5 questões múltipla escolha sobre ${topic} com gabarito.`;
             callGemini(prompt, 'ai-quiz-output');
         }
 
         function generateTutorResponse() {
             const q = document.getElementById('ai-tutor-prompt').value;
             if(!q) return alert("Digite sua dúvida!");
-            const output = document.getElementById('ai-tutor-output');
-            output.classList.remove('hidden');
-            
-            const prompt = `Aja como um professor particular didático. Explique para um pai/aluno: "${q}". Use linguagem simples e exemplos.`;
-            callGemini(prompt, 'ai-tutor-output'); 
+            document.getElementById('ai-tutor-output').classList.remove('hidden');
+            callGemini(`Explique para um aluno: ${q}`, 'ai-tutor-output'); 
         }
 
         function generateReportAnalysis() {
@@ -629,15 +569,20 @@
             const subData = ensureSubjectData(s, appData.currentSubject);
             const calc = calculateStatus(subData);
             const prompt = `Analise o aluno ${s.name} (${appData.currentSubject}). Notas: ${subData.units.join(', ')}. Média: ${calc.average}. Faltas: ${Object.values(subData.attendance).filter(x=>x==='F'||x.status==='F').length}. Escreva um parecer pedagógico curto.`;
-            callGemini(prompt, 'report-observation');
+            callGemini(prompt, 'report-observation', 'ai-loading');
         }
 
-        // --- RENDER TABLES (GRADES/ATTENDANCE/DAILY) ---
-        // (Codes identical to V7 but wrapped cleanly)
+        // --- RENDER TABLES ---
         function renderGradesTable() {
             document.getElementById('view-grades').classList.remove('hidden');
             const canEdit = currentUser.role !== 'parent';
-            document.getElementById('action-buttons').innerHTML = canEdit ? `<button onclick="openAddModal()" class="bg-school-green text-white px-3 py-2 rounded text-sm font-bold shadow"><i class="fas fa-plus"></i> Aluno</button>` : '';
+            let btns = '';
+            if(canEdit) {
+                btns += `<button onclick="openAddModal()" class="bg-school-green text-white px-3 py-2 rounded text-sm font-bold shadow mr-2"><i class="fas fa-plus"></i> Aluno</button>`;
+                if(currentUser.role === 'admin') btns += `<button onclick="document.getElementById('modal-import').classList.remove('hidden')" class="bg-blue-600 text-white px-3 py-2 rounded text-sm font-bold shadow"><i class="fas fa-file-import"></i> Importar Lista</button>`;
+            }
+            document.getElementById('action-buttons').innerHTML = btns;
+
             const tbody = document.getElementById('grades-body'); tbody.innerHTML = '';
             const students = getStudentsByClass();
             if (students.length === 0) { document.getElementById('empty-state').classList.remove('hidden'); return; }
@@ -663,7 +608,7 @@
                     const disabled = !canEdit ? 'disabled' : '';
                     rowHtml += `<td class="px-1 border-l"><input type="number" step="0.1" ${disabled} class="w-full text-center bg-transparent focus:outline-none ${color}" value="${val}" onchange="updateGrade('${s.id}', ${i}, this.value)"></td>`;
                 }
-                rowHtml += `<td class="px-1 text-center font-bold text-blue-800 border-l cursor-pointer" onclick="showHistory('${s.id}')">${totalFaults}</td><td class="px-2 text-center font-bold border-l">${calc.average}</td><td class="px-1 border-l"><input type="number" step="0.1" ${!canEdit || calc.average >= 6 ? 'disabled' : ''} class="w-full text-center ${calc.average >= 6 ? 'bg-gray-100' : 'bg-red-50 text-red-700'}" value="${subData.recovery ?? ''}" onchange="updateRecovery('${s.id}', this.value)"></td><td class="px-2 text-center text-[10px] font-bold uppercase border-l ${calc.statusClass}">${calc.status}</td><td class="px-2 text-center text-xs border-l text-gray-400"><i class="fas fa-ellipsis-v"></i></td></tr>`;
+                rowHtml += `<td class="px-1 text-center font-bold text-blue-800 border-l cursor-pointer" onclick="showHistory('${s.id}')">${totalFaults}</td><td class="px-2 text-center font-bold border-l">${calc.average}</td><td class="px-1 border-l"><input type="number" step="0.1" ${!canEdit || calc.average >= 6 ? 'disabled' : ''} class="w-full text-center ${calc.average >= 6 ? 'bg-gray-100' : 'bg-red-50 text-red-700'}" value="${subData.recovery ?? ''}" onchange="updateRecovery('${s.id}', this.value)"></td><td class="px-2 text-center text-[10px] font-bold uppercase border-l ${calc.statusClass}">${calc.status}</td></tr>`;
                 tbody.innerHTML += rowHtml;
             });
         }
@@ -754,47 +699,84 @@
                 c.appendChild(btn);
             });
         }
-        function ensureSubjectData(s, subj) { if(!s.subjects) s.subjects={}; if(!s.subjects[subj]) s.subjects[subj] = { units: [null,null,null,null,null,null], attendance: {}, dailyLogs: {} }; return s.subjects[subj]; }
+        function ensureSubjectData(s, subj) { if(!s.subjects) s.subjects={}; if(!s.subjects[subj]) s.subjects[subj] = { units: [null,null,null,null,null,null], attendance: {}, dailyLogs: {}, observation: "" }; return s.subjects[subj]; }
+        function calculateStatus(subData) {
+            let sum=0; subData.units.forEach(u => { if(u) sum+=parseFloat(u) });
+            let avg = (sum/6).toFixed(1);
+            let st = "Cursando", cl = "text-gray-500", final = avg;
+            if (avg < 6.0) {
+                if (subData.recovery !== null && subData.recovery !== "") {
+                    final = (parseFloat(avg) + parseFloat(subData.recovery)) / 2;
+                    st = final >= 6.0 ? "Aprovado (Rec)" : "Reprovado"; cl = final >= 6.0 ? "text-green-600" : "text-red-600";
+                } else { st = "Recuperação"; cl = "text-orange-500"; }
+            } else { st = "Aprovado"; cl = "text-green-600"; }
+            return { average: avg, status: st, statusClass: cl };
+        }
         function updateGrade(id, idx, val) { const s = appData.students.find(st => st.id === id); const sd = ensureSubjectData(s, appData.currentSubject); sd.units[idx] = val; db.collection('concenal_students').doc(s.id).update({ [`subjects.${appData.currentSubject}.units`]: sd.units }); }
         function updateRecovery(id, val) { const s = appData.students.find(st => st.id === id); db.collection('concenal_students').doc(s.id).update({ [`subjects.${appData.currentSubject}.recovery`]: val }); }
         function addStudent() { const n = document.getElementById('new-name').value; db.collection('concenal_students').add({ name: n, class: appData.currentClass, subjects: {} }); closeModal('modal-add'); }
+        async function importStudents() {
+            const list = document.getElementById('import-list').value.split('\n');
+            let batch = db.batch();
+            list.forEach(name => {
+                if(name.trim()) {
+                    const ref = db.collection('concenal_students').doc();
+                    batch.set(ref, { name: name.trim(), class: appData.currentClass, subjects: {} });
+                }
+            });
+            await batch.commit();
+            closeModal('modal-import');
+            alert("Importação concluída!");
+        }
         function deleteStudent(id) { if(confirm("Excluir?")) db.collection('concenal_students').doc(id).delete(); }
         function getStudentsByClass() { return appData.students.filter(s => s.class === appData.currentClass).sort((a,b)=>a.name.localeCompare(b.name)); }
-        function populateSubjectSelect() { const sel = document.getElementById('subject-select'); sel.innerHTML = SUBJECTS.map(s => `<option value="${s}">${s}</option>`).join(''); document.getElementById('new-u-subject').innerHTML = sel.innerHTML; }
+        function populateSubjectSelect() { const sel = document.getElementById('subject-select'); sel.innerHTML = SUBJECTS.map(s => `<option value="${s}">${s}</option>`).join(''); }
         function populateNewUserSubjectSelect() {} 
         function closeModal(id) { document.getElementById(id).classList.add('hidden'); }
         function openAddModal() { document.getElementById('modal-add').classList.remove('hidden'); }
-        function openReportModal(id) { currentStudentForReport=appData.students.find(s=>s.id===id); document.getElementById('modal-report').classList.remove('hidden'); }
+        function openReportModal(id) { 
+            currentStudentForReport=appData.students.find(s=>s.id===id); 
+            if(!currentStudentForReport) return alert("Erro ao abrir aluno.");
+            
+            const subData = ensureSubjectData(currentStudentForReport, appData.currentSubject);
+            const calc = calculateStatus(subData);
+            const totalFaults = Object.values(subData.attendance || {}).filter(val => {
+                if (val === 'F') return true;
+                if (typeof val === 'object' && val.status === 'F' && !val.justified) return true;
+                return false;
+            }).length;
+
+            document.getElementById('report-name').innerText = currentStudentForReport.name;
+            document.getElementById('report-avg').innerText = calc.average;
+            document.getElementById('report-faults').innerText = totalFaults;
+            document.getElementById('report-status').innerText = calc.status;
+            
+            // Texto da Observação
+            const obsField = document.getElementById('report-observation');
+            obsField.value = subData.observation || "";
+            
+            // Lógica de Pais vs Professor
+            const tools = document.getElementById('report-tools');
+            if (currentUser.role === 'parent') {
+                tools.classList.add('hidden');
+                obsField.disabled = true;
+                if(!obsField.value) obsField.placeholder = "Nenhuma análise pedagógica disponível.";
+            } else {
+                tools.classList.remove('hidden');
+                obsField.disabled = false;
+                obsField.placeholder = "Escreva ou gere com IA a análise pedagógica...";
+            }
+
+            document.getElementById('modal-report').classList.remove('hidden'); 
+        }
+        function saveReportObservation() {
+            const val = document.getElementById('report-observation').value;
+            const s = currentStudentForReport;
+            db.collection('concenal_students').doc(s.id).update({ [`subjects.${appData.currentSubject}.observation`]: val })
+            .then(() => alert("Parecer salvo com sucesso!"));
+        }
         function showHistory(id) { alert("Histórico disponível no relatório completo."); }
         
-        // --- MISSING FUNCTION ADDED ---
-        function calculateStatus(subData) {
-            let sum=0; 
-            subData.units.forEach(u => { if(u) sum+=parseFloat(u) });
-            // Cálculo simplificado: Soma total / 6
-            let avg = (sum/6).toFixed(1);
-            
-            let status = "Cursando";
-            let statusClass = "text-gray-500";
-            let finalGrade = avg;
-
-            if (avg < 6.0) {
-                if (subData.recovery !== null && subData.recovery !== "") {
-                    finalGrade = (parseFloat(avg) + parseFloat(subData.recovery)) / 2;
-                    status = finalGrade >= 6.0 ? "Aprovado (Rec)" : "Reprovado";
-                    statusClass = finalGrade >= 6.0 ? "text-green-600" : "text-red-600";
-                } else {
-                    status = "Recuperação";
-                    statusClass = "text-orange-500";
-                }
-            } else {
-                status = "Aprovado";
-                statusClass = "text-green-600";
-            }
-            
-            return { average: avg, status: status, statusClass: statusClass };
-        }
-
         // --- USERS & JUSTIFY (Compact) ---
         function openJustifyModal(sid) { currentJustificationStudentId=sid; currentJustificationDate=document.getElementById('attendance-date').value; document.getElementById('just-date-display').innerText=`Data: ${currentJustificationDate}`; document.getElementById('modal-justification').classList.remove('hidden'); }
         function compressImage(file, callback) { const r = new FileReader(); r.readAsDataURL(file); r.onload=e=>{ const i=new Image(); i.src=e.target.result; i.onload=()=>{ const c=document.createElement('canvas'); const scale=400/Math.max(i.width,i.height); c.width=i.width*scale; c.height=i.height*scale; c.getContext('2d').drawImage(i,0,0,c.width,c.height); callback(c.toDataURL('image/jpeg',0.7)); }}; }
