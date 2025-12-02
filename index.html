@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>GESTÃO CONCENAL V16 (Manual)</title>
+    <title>GESTÃO CONCENAL</title>
     
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
@@ -45,7 +45,8 @@
         }
     </style>
 </head>
-<body class="text-gray-800 h-screen flex flex-col overflow-hidden">
+<!-- BODY: Permite rolagem natural -->
+<body class="text-gray-800 min-h-screen flex flex-col bg-gray-50">
 
     <!-- SETUP SCREEN -->
     <div id="setup-screen" class="fixed inset-0 z-[60] flex items-center justify-center bg-gray-900 text-white hidden">
@@ -62,7 +63,7 @@
             <div class="text-center mb-6">
                 <i class="fas fa-school text-5xl text-school-green mb-3"></i>
                 <h1 class="text-xl font-bold text-gray-800 leading-tight">CONTEMPORÂNEO<br>CENTRO EDUCACIONAL</h1>
-                <p class="text-gray-500 text-sm mt-2">Portal Acadêmico</p>
+                <p class="text-gray-500 text-sm mt-2">Gestão Escolar</p>
             </div>
             <form id="login-form" class="space-y-4">
                 <div>
@@ -84,13 +85,15 @@
     </div>
 
     <!-- APP PRINCIPAL -->
-    <div id="app-screen" class="hidden flex-col h-full relative">
-        <div id="loading-overlay" class="absolute inset-0 bg-white bg-opacity-80 z-40 flex items-center justify-center hidden">
+    <div id="app-screen" class="hidden flex-col min-h-screen relative">
+        
+        <!-- Overlay de Carregamento -->
+        <div id="loading-overlay" class="fixed inset-0 bg-white bg-opacity-80 z-50 flex items-center justify-center hidden">
             <i class="fas fa-circle-notch fa-spin text-4xl text-school-green"></i>
         </div>
 
-        <!-- Header -->
-        <header class="bg-school-green text-white shadow-md z-20 shrink-0">
+        <!-- Header Sticky -->
+        <header class="bg-school-green text-white shadow-md z-30 sticky top-0">
             <div class="max-w-7xl mx-auto px-4 h-16 flex items-center justify-between">
                 <div class="flex items-center gap-3">
                     <i class="fas fa-graduation-cap text-2xl"></i>
@@ -118,8 +121,8 @@
             </div>
         </header>
 
-        <!-- Barra de Controle -->
-        <div id="control-bar" class="bg-white border-b border-gray-200 shadow-sm shrink-0 z-10">
+        <!-- Barra de Controle Sticky -->
+        <div id="control-bar" class="bg-white border-b border-gray-200 shadow-sm z-20 sticky top-16">
             <div class="max-w-7xl mx-auto px-4 py-3 flex flex-col md:flex-row gap-4 justify-between items-center">
                 <div class="flex flex-wrap items-center gap-3 w-full md:w-auto justify-center md:justify-start">
                     <select id="subject-select" onchange="changeSubject(this.value)" class="bg-green-50 border border-green-200 text-green-800 font-bold py-2 px-3 rounded text-sm focus:outline-none cursor-pointer"></select>
@@ -130,10 +133,10 @@
         </div>
 
         <!-- Conteúdo -->
-        <main class="flex-1 overflow-auto bg-gray-50 p-2 md:p-6" id="main-content">
+        <main class="w-full max-w-7xl mx-auto p-2 md:p-6" id="main-content">
             
             <!-- Visão: Notas -->
-            <div id="view-grades" class="max-w-7xl mx-auto bg-white rounded-lg shadow-lg overflow-hidden fade-in border border-gray-200">
+            <div id="view-grades" class="bg-white rounded-lg shadow-lg overflow-hidden fade-in border border-gray-200">
                 <div class="bg-gray-50 px-4 py-2 border-b border-gray-200 flex justify-between items-center">
                     <h2 class="text-sm font-bold text-gray-600 uppercase" id="grades-title">Boletim Escolar</h2>
                     <div class="flex gap-4 text-xs text-gray-500">
@@ -145,7 +148,7 @@
                     <table class="min-w-full divide-y divide-gray-200">
                         <thead class="bg-gray-100 text-gray-500 font-bold text-xs uppercase text-center sticky top-0 z-10">
                             <tr>
-                                <th class="px-4 py-3 text-left w-48 sticky left-0 bg-gray-100 shadow-sm border-r">Aluno</th>
+                                <th class="px-4 py-3 text-left w-48 sticky left-0 bg-gray-100 shadow-sm border-r z-10">Aluno</th>
                                 <th class="w-14">U1</th><th class="w-14">U2</th><th class="w-14">U3</th><th class="w-14">U4</th><th class="w-14">U5</th><th class="w-14">U6</th>
                                 <th class="w-24 bg-blue-50 text-blue-700 border-l" title="% de Faltas">Faltas</th>
                                 <th class="w-16 bg-gray-50 text-gray-800 border-l">Média</th>
@@ -311,7 +314,10 @@
                     <!-- Área de Adição (Apenas Prof/Admin) -->
                     <div id="report-tools" class="no-print border-t pt-3">
                         <label class="block text-xs font-bold text-gray-500 mb-1">Nova Observação Manual</label>
-                        <textarea id="new-observation-text" rows="3" class="w-full border border-gray-300 rounded p-2 text-sm focus:ring-2 focus:ring-school-green outline-none" placeholder="Digite uma observação..."></textarea>
+                        <div class="flex flex-col gap-2">
+                            <input type="date" id="new-observation-date" class="border border-gray-300 rounded p-2 text-sm text-gray-600 focus:outline-none w-full sm:w-auto">
+                            <textarea id="new-observation-text" rows="3" class="w-full border border-gray-300 rounded p-2 text-sm focus:ring-2 focus:ring-school-green outline-none" placeholder="Digite uma observação..."></textarea>
+                        </div>
                         <div class="flex justify-end mt-2">
                             <button onclick="addObservation()" class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-1.5 rounded text-sm font-bold shadow transition"><i class="fas fa-plus"></i> Adicionar</button>
                         </div>
@@ -408,7 +414,8 @@
         }
 
         function calculateStatus(d) {
-            let sum = 0; d.units.forEach(u => { if (u) sum += parseFloat(u) }); 
+            let sum = 0, filled = 0;
+            d.units.forEach(u => { if (u !== null && u !== "") { sum += parseFloat(u); filled++; } });
             let avg = (sum / 6).toFixed(1);
             
             const totalFaults = countFaults(d);
@@ -416,19 +423,23 @@
             const freqPercent = ((totalDays - totalFaults) / totalDays) * 100;
             
             let st = "Cursando", cl = "text-gray-500";
-            if (avg < 6.0) {
-                if (d.recovery !== null && d.recovery !== "") {
-                    let final = (parseFloat(avg) + parseFloat(d.recovery)) / 2;
-                    st = final >= 6.0 ? "Aprovado (Rec)" : "Reprovado"; 
-                    cl = final >= 6.0 ? "status-badge text-green-700 bg-green-100" : "status-badge text-red-700 bg-red-100";
-                } else { 
-                    st = "Recuperação"; cl = "status-badge text-orange-700 bg-orange-100"; 
-                }
-            } else { 
-                st = "Aprovado"; cl = "status-badge text-green-700 bg-green-100"; 
-            }
             
-            if (freqPercent < 75) { st = "REPROVADO (FALTAS)"; cl = "status-rf"; }
+            if (filled === 6) {
+                if (avg < 6.0) {
+                    if (d.recovery !== null && d.recovery !== "") {
+                        let final = (parseFloat(avg) + parseFloat(d.recovery)) / 2;
+                        st = final >= 6.0 ? "Aprovado (Rec)" : "Reprovado"; 
+                        cl = final >= 6.0 ? "status-badge text-green-700 bg-green-100" : "status-badge text-red-700 bg-red-100";
+                    } else { 
+                        st = "Recuperação"; cl = "status-badge text-orange-700 bg-orange-100"; 
+                    }
+                } else { 
+                    st = "Aprovado"; cl = "status-badge text-green-700 bg-green-100"; 
+                }
+                if (freqPercent < 75) { st = "REPROVADO (FALTAS)"; cl = "status-rf"; }
+            } else {
+                st = ""; cl = "";
+            }
 
             return { average: avg, status: st, statusClass: cl, faults: totalFaults, freq: freqPercent.toFixed(1), totalDays: totalDays };
         }
@@ -458,7 +469,7 @@
             db = firebase.firestore();
             db.enablePersistence().catch(err => console.log("Persistence error", err));
 
-            const session = localStorage.getItem('concenal_v12_session');
+            const session = localStorage.getItem('concenal_v16_session');
             if(session) { currentUser = JSON.parse(session); showApp(); } 
             else { document.getElementById('login-screen').classList.remove('hidden'); }
 
@@ -497,11 +508,11 @@
         });
 
         function finalizeLogin() {
-            localStorage.setItem('concenal_v12_session', JSON.stringify(currentUser));
+            localStorage.setItem('concenal_v16_session', JSON.stringify(currentUser));
             showApp();
         }
 
-        function logout() { localStorage.removeItem('concenal_v12_session'); location.reload(); }
+        function logout() { localStorage.removeItem('concenal_v16_session'); location.reload(); }
 
         function showApp() {
             document.getElementById('login-screen').classList.add('hidden');
@@ -591,7 +602,7 @@
                     const disabled = !canEdit ? 'disabled' : '';
                     row += `<td class="px-1 border-l"><input type="number" step="0.1" ${disabled} class="w-full text-center bg-transparent focus:outline-none ${c}" value="${v}" onchange="updateGrade('${s.id}', ${i}, this.value)"></td>`;
                 }
-                row += `<td class="px-1 text-center font-bold border-l cursor-pointer ${faultColor}" onclick="showHistory('${s.id}')">${calc.faults} <span class="text-[10px] block font-normal opacity-75">${100 - calc.freq}%</span></td><td class="px-2 text-center font-bold border-l">${calc.average}</td><td class="px-1 border-l"><input type="number" step="0.1" ${!canEdit || calc.average >= 6 ? 'disabled' : ''} class="w-full text-center ${calc.average >= 6 ? 'bg-gray-100' : 'bg-red-50 text-red-700'}" value="${subData.recovery ?? ''}" onchange="updateRecovery('${s.id}', this.value)"></td><td class="px-2 text-center uppercase border-l"><span class="${calc.statusClass}">${calc.status}</span></td></tr>`;
+                row += `<td class="px-1 text-center font-bold border-l cursor-pointer ${faultColor}" onclick="showHistory('${s.id}')">${calc.faults} <span class="text-[10px] block font-normal opacity-75">${100 - calc.freq}%</span></td><td class="px-2 text-center font-bold border-l">${calc.average}</td><td class="px-1 border-l"><input type="number" step="0.1" ${!canEdit || calc.average >= 6 ? 'disabled' : ''} class="w-full text-center ${calc.average >= 6 ? 'bg-gray-100' : 'bg-red-50 text-red-700'}" value="${subData.recovery ?? ''}" onchange="updateRecovery('${s.id}', this.value)"></td><td class="px-2 text-center uppercase border-l"><span class="${calc.statusClass}">${calc.status || "--"}</span></td></tr>`;
                 tbody.innerHTML += row;
             });
         }
@@ -720,6 +731,8 @@
             const tools = document.getElementById('report-tools');
             const parentMsg = document.getElementById('report-parent-msg');
 
+            document.getElementById('new-observation-date').value = today;
+
             if (currentUser.role === 'parent') {
                 tools.classList.add('hidden');
                 parentMsg.classList.remove('hidden');
@@ -757,11 +770,17 @@
 
         async function addObservation() {
             const text = document.getElementById('new-observation-text').value.trim();
-            if (!text) return;
+            const dateVal = document.getElementById('new-observation-date').value;
+            
+            if (!text) return alert("Digite o texto da observação.");
+            if (!dateVal) return alert("Selecione a data.");
+
             const s = currentStudentForReport;
             const subData = ensureSubjectData(s, appData.currentSubject);
-            subData.observations.push({ date: today, text: text, author: currentUser.name });
+            
+            subData.observations.push({ date: dateVal, text: text, author: currentUser.name });
             await db.collection('concenal_students').doc(s.id).set({ subjects: { [appData.currentSubject]: { observations: subData.observations } } }, { merge: true });
+            
             document.getElementById('new-observation-text').value = '';
             renderObservationsList(subData.observations);
         }
