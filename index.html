@@ -3,877 +3,433 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>GESTÃO CONCENAL</title>
-    
+    <title>Extrator Automático de Tickets</title>
     <script src="https://cdn.tailwindcss.com"></script>
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-
-    <!-- Firebase SDKs -->
-    <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
-    <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
-    <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js"></script>
-
-    <script>
-        tailwind.config = {
-            theme: {
-                extend: {
-                    colors: {
-                        school: { green: '#047857', lightGreen: '#10B981', red: '#DC2626', bg: '#F3F4F6' }
-                    }
-                }
-            }
-        }
-    </script>
-
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
     <style>
-        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #F3F4F6; }
-        input[type=number]::-webkit-inner-spin-button, input[type=number]::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
-        .fade-in { animation: fadeIn 0.3s ease-in-out; }
-        @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
-        ::-webkit-scrollbar { width: 6px; height: 6px; }
-        ::-webkit-scrollbar-track { background: #f1f1f1; }
-        ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
+        body {
+            background-color: #0f172a; /* Slate 900 */
+            color: #f8fafc; /* Slate 50 */
+        }
+        .glass-panel {
+            background: rgba(30, 41, 59, 0.7); /* Slate 800 w/ opacity */
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+        #drop-zone.dragover {
+            background-color: rgba(56, 189, 248, 0.1); /* Sky 400 w/ opacity */
+            border-color: #38bdf8;
+        }
+        .loader {
+            border: 3px solid rgba(255, 255, 255, 0.1);
+            border-top: 3px solid #38bdf8;
+            border-radius: 50%;
+            width: 24px;
+            height: 24px;
+            animation: spin 1s linear infinite;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
         
-        .status-rf { color: #7f1d1d; font-weight: 800; background-color: #fee2e2; padding: 2px 6px; border-radius: 4px; font-size: 0.65rem; }
-        .status-badge { padding: 2px 6px; border-radius: 4px; font-size: 0.7rem; font-weight: 800; }
-
-        @media print {
-            body * { visibility: hidden; }
-            #modal-report, #modal-report * { visibility: visible; }
-            #modal-report { position: absolute; left: 0; top: 0; width: 100%; height: 100%; background: white; z-index: 9999; padding: 0; }
-            .no-print { display: none !important; }
+        /* Estilização customizada para os Radio Buttons */
+        input[type="radio"] {
+            accent-color: #38bdf8;
+            width: 1.25rem;
+            height: 1.25rem;
+            cursor: pointer;
         }
     </style>
 </head>
-<!-- BODY: Permite rolagem natural -->
-<body class="text-gray-800 min-h-screen flex flex-col bg-gray-50">
+<body class="min-h-screen flex flex-col items-center p-4 sm:p-8 font-sans">
 
-    <!-- SETUP SCREEN -->
-    <div id="setup-screen" class="fixed inset-0 z-[60] flex items-center justify-center bg-gray-900 text-white hidden">
-        <div class="bg-gray-800 p-8 rounded-lg max-w-lg w-full text-center">
-            <h2 class="text-2xl font-bold mb-4 text-yellow-400">Configuração Necessária</h2>
-            <p class="text-xs mb-4">Cole sua configuração do Firebase no código HTML (final do arquivo).</p>
-            <button onclick="location.reload()" class="bg-blue-600 px-6 py-2 rounded hover:bg-blue-500">Recarregar</button>
+    <div class="w-full max-w-3xl glass-panel rounded-2xl shadow-2xl p-6 sm:p-8 mt-4 sm:mt-10">
+        <div class="text-center mb-6">
+            <h1 class="text-3xl font-bold text-sky-400 mb-2"><i class="fa-solid fa-robot mr-2"></i> Auto Extrator de Tickets</h1>
+            <p class="text-slate-400 text-sm">Selecione o tipo, faça o upload do(s) print(s) e a IA organizará os dados.</p>
         </div>
-    </div>
 
-    <!-- LOGIN -->
-    <div id="login-screen" class="fixed inset-0 z-50 flex items-center justify-center bg-school-green">
-        <div class="bg-white p-8 rounded-lg shadow-2xl w-full max-w-md mx-4 fade-in relative">
-            <div class="text-center mb-6">
-                <i class="fas fa-school text-5xl text-school-green mb-3"></i>
-                <h1 class="text-xl font-bold text-gray-800 leading-tight">CONTEMPORÂNEO<br>CENTRO EDUCACIONAL</h1>
-                <p class="text-gray-500 text-sm mt-2">Gestão Escolar</p>
+        <!-- Seletor de Tipo de Ticket -->
+        <div class="mb-6 flex flex-col sm:flex-row justify-center items-center gap-4 bg-slate-800/50 p-4 rounded-xl border border-slate-700">
+            <span class="text-slate-300 font-semibold mr-2"><i class="fa-solid fa-filter mr-1"></i> Modo de Extração:</span>
+            <label class="cursor-pointer flex items-center gap-2 hover:text-sky-400 transition-colors">
+                <input type="radio" name="extractionType" value="cc" checked>
+                <span class="font-medium">Ticket de CC (Padrão)</span>
+            </label>
+            <div class="hidden sm:block w-px h-6 bg-slate-600"></div>
+            <label class="cursor-pointer flex items-center gap-2 hover:text-sky-400 transition-colors">
+                <input type="radio" name="extractionType" value="ltc">
+                <span class="font-medium">Pagamento LTC</span>
+            </label>
+        </div>
+
+        <!-- Área de Upload -->
+        <div id="drop-zone" class="border-2 border-dashed border-slate-600 rounded-xl p-8 text-center transition-colors duration-200 hover:border-sky-400 hover:bg-slate-800/50">
+            <input type="file" id="file-input" class="hidden" accept="image/png, image/jpeg, image/jpg" multiple>
+            
+            <div id="upload-content" class="cursor-pointer" onclick="document.getElementById('file-input').click()">
+                <i class="fa-solid fa-cloud-arrow-up text-5xl text-slate-500 mb-4"></i>
+                <p class="text-lg font-medium text-slate-300">Clique ou arraste prints aqui</p>
+                <p class="text-sm text-slate-500 mt-1">Pode selecionar vários de uma vez</p>
             </div>
-            <form id="login-form" class="space-y-4">
-                <div>
-                    <label class="block text-xs font-bold text-gray-500 uppercase">Usuário</label>
-                    <input type="text" id="username" class="block w-full border border-gray-300 rounded p-2 focus:ring-2 focus:ring-school-green outline-none" placeholder="Ex: admin" required>
-                </div>
-                <div>
-                    <label class="block text-xs font-bold text-gray-500 uppercase">Senha</label>
-                    <input type="password" id="password" class="block w-full border border-gray-300 rounded p-2 focus:ring-2 focus:ring-school-green outline-none" required>
-                </div>
-                <div id="login-error" class="text-red-600 text-sm hidden bg-red-50 p-2 rounded border border-red-200 text-center">
-                    <i class="fas fa-exclamation-circle"></i> Credenciais inválidas.
-                </div>
-                <button type="submit" id="btn-login" class="w-full py-2.5 bg-school-green text-white rounded hover:bg-green-700 font-bold transition shadow-lg flex justify-center items-center gap-2">
-                    <span>Entrar</span>
-                </button>
-            </form>
-        </div>
-    </div>
 
-    <!-- APP PRINCIPAL -->
-    <div id="app-screen" class="hidden flex-col min-h-screen relative">
-        
-        <!-- Overlay de Carregamento -->
-        <div id="loading-overlay" class="fixed inset-0 bg-white bg-opacity-80 z-50 flex items-center justify-center hidden">
-            <i class="fas fa-circle-notch fa-spin text-4xl text-school-green"></i>
-        </div>
-
-        <!-- Header Sticky -->
-        <header class="bg-school-green text-white shadow-md z-30 sticky top-0">
-            <div class="max-w-7xl mx-auto px-4 h-16 flex items-center justify-between">
-                <div class="flex items-center gap-3">
-                    <i class="fas fa-graduation-cap text-2xl"></i>
-                    <div class="leading-tight">
-                        <h1 class="text-sm font-bold tracking-wide uppercase">CONCENAL</h1>
-                        <span class="text-xs text-green-200 block truncate max-w-[150px] sm:max-w-xs" id="user-display-name">...</span>
-                    </div>
+            <!-- Preview da Imagem -->
+            <div id="image-preview-container" class="hidden flex flex-col items-center justify-center">
+                <div id="image-grid" class="flex flex-wrap justify-center gap-4 mb-6 w-full max-h-64 overflow-y-auto p-2">
+                    <!-- Thumbnails das imagens aparecerão aqui -->
                 </div>
-                
-                <div class="flex items-center gap-2 overflow-x-auto no-scrollbar">
-                    <!-- Menu Admin -->
-                    <button onclick="openUsersModal()" id="btn-manage-users" class="hidden bg-green-800 hover:bg-green-900 text-white px-3 py-1.5 rounded text-xs font-bold items-center gap-2 border border-green-700 whitespace-nowrap">
-                        <i class="fas fa-users-cog"></i> <span class="hidden sm:inline">Gestão</span>
+                <div class="flex gap-4">
+                    <button type="button" class="bg-slate-700 hover:bg-slate-600 text-white text-sm py-2 px-4 rounded transition-colors" onclick="document.getElementById('file-input').click()">
+                        <i class="fa-solid fa-plus mr-1"></i> Adicionar Mais
                     </button>
-
-                    <!-- Navegação Central -->
-                    <div class="flex bg-green-800 rounded p-1" id="main-nav">
-                        <button onclick="switchMode('grades')" id="nav-grades" class="px-3 py-1 rounded text-xs sm:text-sm font-bold bg-white text-school-green shadow">Notas</button>
-                        <button onclick="switchMode('attendance')" id="nav-attendance" class="px-3 py-1 rounded text-xs sm:text-sm font-bold text-green-100 hover:text-white">Freq.</button>
-                        <button onclick="switchMode('daily')" id="nav-daily" class="px-3 py-1 rounded text-xs sm:text-sm font-bold text-green-100 hover:text-white">Diário</button>
-                    </div>
-                    
-                    <button onclick="logout()" class="text-white hover:text-red-200 ml-2"><i class="fas fa-sign-out-alt fa-lg"></i></button>
-                </div>
-            </div>
-        </header>
-
-        <!-- Barra de Controle Sticky -->
-        <div id="control-bar" class="bg-white border-b border-gray-200 shadow-sm z-20 sticky top-16">
-            <div class="max-w-7xl mx-auto px-4 py-3 flex flex-col md:flex-row gap-4 justify-between items-center">
-                <div class="flex flex-wrap items-center gap-3 w-full md:w-auto justify-center md:justify-start">
-                    <select id="subject-select" onchange="changeSubject(this.value)" class="bg-green-50 border border-green-200 text-green-800 font-bold py-2 px-3 rounded text-sm focus:outline-none cursor-pointer"></select>
-                    <div class="flex space-x-1 overflow-x-auto" id="class-tabs"></div>
-                </div>
-                <div id="action-buttons" class="flex gap-2"></div>
-            </div>
-        </div>
-
-        <!-- Conteúdo -->
-        <main class="w-full max-w-7xl mx-auto p-2 md:p-6" id="main-content">
-            
-            <!-- Visão: Notas -->
-            <div id="view-grades" class="bg-white rounded-lg shadow-lg overflow-hidden fade-in border border-gray-200">
-                <div class="bg-gray-50 px-4 py-2 border-b border-gray-200 flex justify-between items-center">
-                    <h2 class="text-sm font-bold text-gray-600 uppercase" id="grades-title">Boletim Escolar</h2>
-                    <div class="flex gap-4 text-xs text-gray-500">
-                        <span><i class="fas fa-circle text-green-600"></i> >75% Freq</span>
-                        <span><i class="fas fa-circle text-red-600"></i> &lt;75% Freq</span>
-                    </div>
-                </div>
-                <div class="overflow-x-auto">
-                    <table class="min-w-full divide-y divide-gray-200">
-                        <thead class="bg-gray-100 text-gray-500 font-bold text-xs uppercase text-center sticky top-0 z-10">
-                            <tr>
-                                <th class="px-4 py-3 text-left w-48 sticky left-0 bg-gray-100 shadow-sm border-r z-10">Aluno</th>
-                                <th class="w-14">U1</th><th class="w-14">U2</th><th class="w-14">U3</th><th class="w-14">U4</th><th class="w-14">U5</th><th class="w-14">U6</th>
-                                <th class="w-24 bg-blue-50 text-blue-700 border-l" title="% de Faltas">Faltas</th>
-                                <th class="w-16 bg-gray-50 text-gray-800 border-l">Média</th>
-                                <th class="w-20 text-red-600 border-l">Rec</th>
-                                <th class="w-24 border-l">Status</th>
-                            </tr>
-                        </thead>
-                        <tbody id="grades-body" class="bg-white divide-y divide-gray-200 text-sm"></tbody>
-                    </table>
-                </div>
-                <div id="empty-state" class="hidden p-12 text-center text-gray-500"><i class="fas fa-user-graduate text-4xl mb-3 text-gray-300"></i><p>Nenhum dado encontrado.</p></div>
-            </div>
-
-            <!-- Visão: Frequência -->
-            <div id="view-attendance" class="max-w-4xl mx-auto bg-white rounded-lg shadow-lg overflow-hidden hidden fade-in border border-gray-200">
-                <div class="p-4 border-b bg-gray-50 flex justify-between items-center">
-                    <div class="bg-white p-1 rounded border border-gray-200 shadow-sm">
-                        <input type="date" id="attendance-date" class="block text-sm font-bold text-gray-800 focus:outline-none">
-                    </div>
-                    <div class="text-xs flex gap-2">
-                        <span class="flex items-center gap-1"><div class="w-2 h-2 rounded-full bg-green-500"></div> P</span>
-                        <span class="flex items-center gap-1"><div class="w-2 h-2 rounded-full bg-red-500"></div> F</span>
-                        <span class="flex items-center gap-1"><div class="w-2 h-2 rounded-full bg-yellow-500"></div> Just.</span>
-                    </div>
-                </div>
-                <div class="overflow-x-auto">
-                    <table class="min-w-full divide-y divide-gray-200">
-                        <tbody id="attendance-body" class="bg-white divide-y divide-gray-200"></tbody>
-                    </table>
-                </div>
-                <div class="p-4 bg-gray-50 border-t flex justify-end" id="attendance-actions">
-                    <button onclick="saveDailyAttendance()" class="bg-school-green hover:bg-green-700 text-white px-6 py-2 rounded shadow font-bold text-sm">Salvar Chamada</button>
-                </div>
-                <div id="empty-state-attendance" class="hidden p-12 text-center text-gray-500">
-                    <i class="fas fa-calendar-times text-4xl mb-3 text-gray-300"></i>
-                    <p>Nenhum aluno nesta turma para esta data.</p>
-                </div>
-            </div>
-
-            <!-- Visão: Diário -->
-            <div id="view-daily" class="max-w-5xl mx-auto bg-white rounded-lg shadow-lg overflow-hidden hidden fade-in border border-gray-200">
-                <div class="p-4 border-b bg-gray-50 flex justify-between items-center">
-                    <h3 class="font-bold text-gray-700 text-sm uppercase"><i class="fas fa-book-open mr-2"></i> Diário de Classe</h3>
-                    <div class="bg-white p-1 rounded border border-gray-200 shadow-sm">
-                        <input type="date" id="daily-date" class="block text-sm font-bold text-gray-800 focus:outline-none">
-                    </div>
-                </div>
-                <div class="overflow-x-auto">
-                    <table class="min-w-full divide-y divide-gray-200">
-                        <thead class="bg-gray-100 text-xs text-gray-500 uppercase font-bold text-center">
-                            <tr>
-                                <th class="px-4 py-3 text-left">Aluno</th>
-                                <th class="px-2 py-3 w-32">Dever de Casa</th>
-                                <th class="px-2 py-3 w-40">Comportamento</th>
-                            </tr>
-                        </thead>
-                        <tbody id="daily-body" class="bg-white divide-y divide-gray-200 text-sm"></tbody>
-                    </table>
-                </div>
-                <div class="p-4 bg-gray-50 border-t flex justify-end" id="daily-actions">
-                    <button onclick="saveDailyLog()" class="bg-blue-600 hover:bg-blue-700 text-white px-6 py-2 rounded shadow font-bold text-sm">Salvar Diário</button>
-                </div>
-            </div>
-        </main>
-    </div>
-
-    <!-- MODAIS -->
-    <!-- Justificar -->
-    <div id="modal-justification" class="fixed inset-0 bg-black bg-opacity-70 hidden z-[80] flex items-center justify-center p-4">
-        <div class="bg-white rounded-lg p-6 w-full max-w-sm">
-            <h3 class="font-bold text-lg mb-2 text-school-green">Justificar Falta</h3>
-            <p class="text-xs text-gray-500 mb-4" id="just-date-display">--</p>
-            <select id="just-reason" class="w-full border p-2 rounded text-sm mb-3">
-                <option>Médico</option><option>Pessoal</option><option>Outro</option>
-            </select>
-            <label class="block text-xs font-bold text-gray-700 mb-1">Foto (Opcional)</label>
-            <input type="file" id="just-file" accept="image/*" class="w-full text-xs border p-2 rounded mb-4">
-            <div class="flex justify-end gap-2">
-                <button onclick="closeModal('modal-justification')" class="px-4 py-2 bg-gray-200 rounded text-sm">Cancelar</button>
-                <button onclick="submitJustification()" class="px-4 py-2 bg-school-green text-white rounded text-sm font-bold">Enviar</button>
-            </div>
-        </div>
-    </div>
-
-    <!-- Importar em Massa -->
-    <div id="modal-import" class="fixed inset-0 bg-black bg-opacity-70 hidden z-[80] flex items-center justify-center p-4">
-        <div class="bg-white rounded-lg p-6 w-full max-w-md">
-            <h3 class="font-bold text-lg mb-2 text-school-green">Importar Alunos</h3>
-            <p class="text-xs text-gray-500 mb-2">Cole a lista de nomes (um por linha).</p>
-            <textarea id="import-list" rows="10" class="w-full border p-2 rounded text-sm mb-4" placeholder="Ana Silva&#10;Bruno Costa..."></textarea>
-            <div class="flex justify-end gap-2">
-                <button onclick="closeModal('modal-import')" class="px-4 py-2 bg-gray-200 rounded text-sm">Cancelar</button>
-                <button onclick="importStudents()" class="px-4 py-2 bg-blue-600 text-white rounded text-sm font-bold">Importar</button>
-            </div>
-        </div>
-    </div>
-
-    <!-- NOVO: Excluir em Massa -->
-    <div id="modal-bulk-delete" class="fixed inset-0 bg-black bg-opacity-70 hidden z-[80] flex items-center justify-center p-4">
-        <div class="bg-white rounded-lg p-6 w-full max-w-md border-l-4 border-red-600">
-            <h3 class="font-bold text-lg mb-2 text-red-600">Excluir Alunos em Massa</h3>
-            <p class="text-xs text-gray-500 mb-2">ATENÇÃO: Ação irreversível. Cole os nomes para excluir da turma atual.</p>
-            <textarea id="bulk-delete-list" rows="8" class="w-full border border-red-200 p-2 rounded text-sm mb-4 bg-red-50" placeholder="Nome do Aluno 1&#10;Nome do Aluno 2..."></textarea>
-            <div class="flex justify-between gap-2">
-                <button onclick="bulkDeleteAllClass()" class="px-3 py-2 bg-red-800 text-white rounded text-xs font-bold uppercase hover:bg-red-900" title="Cuidado! Apaga a turma toda.">Limpar Turma</button>
-                <div class="flex gap-2">
-                    <button onclick="closeModal('modal-bulk-delete')" class="px-4 py-2 bg-gray-200 rounded text-sm">Cancelar</button>
-                    <button onclick="bulkDeleteStudents()" class="px-4 py-2 bg-red-600 text-white rounded text-sm font-bold">Excluir Lista</button>
+                    <button type="button" id="remove-image-btn" class="bg-red-900/50 hover:bg-red-800/50 text-red-300 text-sm py-2 px-4 rounded transition-colors">
+                        <i class="fa-solid fa-trash mr-1"></i> Limpar Tudo
+                    </button>
                 </div>
             </div>
         </div>
-    </div>
 
-    <!-- Gestão de Usuários (Admin) -->
-    <div id="modal-users" class="fixed inset-0 bg-black bg-opacity-70 hidden z-[90] flex items-center justify-center p-4 backdrop-blur-sm">
-        <div class="bg-white rounded-lg shadow-2xl w-full max-w-lg flex flex-col max-h-[90vh]">
-            <div class="p-4 border-b flex justify-between items-center bg-gray-50 rounded-t-lg">
-                <h3 class="font-bold text-gray-800">Gestão de Acessos</h3>
-                <button onclick="closeModal('modal-users')" class="text-gray-400 hover:text-red-500"><i class="fas fa-times"></i></button>
+        <!-- Ações -->
+        <div class="mt-6 flex justify-center">
+            <button id="extract-btn" class="hidden bg-sky-500 hover:bg-sky-600 text-white font-semibold py-3 px-8 rounded-lg shadow-lg transition-transform transform hover:scale-105 flex items-center">
+                <i class="fa-solid fa-wand-magic-sparkles mr-2"></i> Extrair e Organizar Dados
+            </button>
+            <div id="loading-indicator" class="hidden flex items-center text-sky-400 font-medium py-3 px-8">
+                <div class="loader mr-3"></div> Analisando imagem(ns) com IA...
             </div>
-            <div class="p-4 overflow-y-auto">
-                <div class="flex gap-2 mb-4 border-b">
-                    <button onclick="switchUserTab('teacher')" id="tab-teacher" class="px-3 py-1 font-bold text-sm border-b-2 border-school-green text-school-green">Professores</button>
-                    <button onclick="switchUserTab('parent')" id="tab-parent" class="px-3 py-1 font-bold text-sm text-gray-500">Pais</button>
-                </div>
-                <div class="bg-blue-50 p-4 rounded-lg mb-4 border border-blue-100">
-                    <div class="grid grid-cols-1 gap-2 mb-2">
-                        <input type="text" id="new-u-name" placeholder="Nome" class="border p-2 rounded text-sm">
-                        <input type="text" id="new-u-login" placeholder="Login" class="border p-2 rounded text-sm">
-                        <input type="text" id="new-u-pass" placeholder="Senha" class="border p-2 rounded text-sm">
-                        <div id="field-teacher-subj"><select id="new-u-subject" class="w-full border p-2 rounded text-sm"></select></div>
-                        <div id="field-parent-student" class="hidden">
-                            <input type="text" id="new-u-student-id" placeholder="ID do Aluno (Copie da lista de alunos)" class="border p-2 rounded text-sm w-full">
-                            <p class="text-[10px] text-gray-500 mt-1">*Copie o ID que aparece abaixo do nome do aluno na tabela de Notas.</p>
-                        </div>
-                    </div>
-                    <button onclick="createUser()" class="w-full bg-blue-600 hover:bg-blue-700 text-white py-2 rounded text-sm font-bold">Criar Acesso</button>
-                </div>
-                <div id="users-list" class="space-y-2 text-sm"></div>
+        </div>
+
+        <!-- Área de Resultado -->
+        <div id="result-container" class="hidden mt-8 opacity-0 transition-opacity duration-500">
+            <div class="flex justify-between items-center mb-2">
+                <h3 class="text-lg font-semibold text-slate-200"><i class="fa-solid fa-file-lines mr-2 text-slate-400"></i>Resultado Formatado</h3>
+                <button id="copy-btn" class="bg-slate-700 hover:bg-slate-600 text-slate-200 text-sm py-1.5 px-4 rounded transition-colors flex items-center">
+                    <i class="fa-regular fa-copy mr-2"></i> Copiar
+                </button>
             </div>
+            <textarea id="result-text" class="w-full h-64 bg-slate-900 border border-slate-700 rounded-lg p-4 text-slate-300 font-mono text-sm resize-none focus:outline-none focus:border-sky-500 transition-colors" readonly></textarea>
         </div>
     </div>
 
-    <!-- Relatório / Histórico -->
-    <div id="modal-report" class="fixed inset-0 bg-black bg-opacity-70 hidden z-[70] flex items-center justify-center p-4 backdrop-blur-sm overflow-y-auto">
-        <div id="modal-report-content" class="bg-white rounded-lg shadow-2xl w-full max-w-2xl flex flex-col h-[90vh]">
-            <div class="p-6 border-b flex justify-between items-start bg-gray-50 rounded-t-lg shrink-0">
-                <div>
-                    <h2 class="text-xl font-bold text-gray-800" id="report-name">--</h2>
-                    <p class="text-xs text-gray-500 mt-1">RELATÓRIO & HISTÓRICO</p>
-                </div>
-                <button onclick="closeModal('modal-report')" class="text-gray-400 no-print"><i class="fas fa-times"></i></button>
-            </div>
-            
-            <div class="p-6 flex-1 overflow-y-auto">
-                <div class="grid grid-cols-1 sm:grid-cols-3 gap-2 mb-6 text-center">
-                    <div class="bg-gray-100 p-2 rounded">
-                        <span class="text-xs block text-gray-500">Média</span>
-                        <strong class="text-lg" id="report-avg">-</strong>
-                    </div>
-                    <div class="bg-gray-100 p-2 rounded">
-                        <span class="text-xs block text-gray-500">Frequência</span>
-                        <strong class="text-lg" id="report-freq">-</strong>
-                        <div class="w-full bg-gray-300 rounded-full h-1.5 mt-1">
-                            <div class="bg-green-600 h-1.5 rounded-full" id="report-freq-bar" style="width: 0%"></div>
-                        </div>
-                        <span class="text-[10px] text-gray-400" id="report-days-count"></span>
-                    </div>
-                    <div class="bg-gray-100 p-2 rounded">
-                        <span class="text-xs block text-gray-500">Status Final</span>
-                        <strong class="text-lg" id="report-status">-</strong>
-                    </div>
-                </div>
-
-                <div class="mb-4">
-                    <h4 class="font-bold text-gray-700 mb-2 border-b pb-1">Observações Pedagógicas</h4>
-                    <div id="observations-list" class="space-y-3 mb-4 max-h-48 overflow-y-auto bg-gray-50 p-2 rounded"></div>
-
-                    <!-- Área de Adição (Apenas Prof/Admin) -->
-                    <div id="report-tools" class="no-print border-t pt-3">
-                        <label class="block text-xs font-bold text-gray-500 mb-1">Nova Observação Manual</label>
-                        <div class="flex flex-col gap-2">
-                            <input type="date" id="new-observation-date" class="border border-gray-300 rounded p-2 text-sm text-gray-600 focus:outline-none w-full sm:w-auto">
-                            <textarea id="new-observation-text" rows="3" class="w-full border border-gray-300 rounded p-2 text-sm focus:ring-2 focus:ring-school-green outline-none" placeholder="Digite uma observação..."></textarea>
-                        </div>
-                        <div class="flex justify-end mt-2">
-                            <button onclick="addObservation()" class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-1.5 rounded text-sm font-bold shadow transition"><i class="fas fa-plus"></i> Adicionar</button>
-                        </div>
-                    </div>
-                    
-                    <!-- Mensagem para Pais -->
-                    <div id="report-parent-msg" class="hidden text-sm text-gray-500 italic text-center p-4">
-                        <i class="fas fa-info-circle"></i> Visualização do responsável (Somente Leitura).
-                    </div>
-                </div>
-            </div>
-            
-            <div class="p-4 bg-gray-50 rounded-b-lg flex justify-end no-print shrink-0">
-                <button onclick="window.print()" class="bg-gray-700 text-white px-4 py-2 rounded text-sm font-bold"><i class="fas fa-print"></i> Imprimir</button>
-            </div>
-        </div>
+    <!-- Sistema de Notificação -->
+    <div id="notification" class="fixed bottom-5 right-5 transform translate-y-20 opacity-0 transition-all duration-300 bg-emerald-500 text-white px-6 py-3 rounded-lg shadow-lg font-medium flex items-center z-50">
+        <i class="fa-solid fa-check-circle mr-2"></i> <span id="notification-text">Copiado com sucesso!</span>
     </div>
 
-    <!-- Modal Adicionar Aluno -->
-    <div id="modal-add" class="fixed inset-0 bg-black bg-opacity-60 hidden z-50 flex items-center justify-center p-4"><div class="bg-white rounded p-6 w-full max-w-sm"><h3 class="font-bold mb-4">Adicionar Aluno</h3><input id="new-name" class="border w-full p-2 mb-4 rounded" placeholder="Nome"><div class="flex justify-end gap-2"><button onclick="closeModal('modal-add')" class="bg-gray-200 px-4 py-2 rounded">Cancelar</button><button onclick="addStudent()" class="bg-school-green text-white px-4 py-2 rounded">Salvar</button></div></div></div>
-
-    <!-- Script -->
     <script>
-        // ==========================================
-        // CONFIGURAÇÃO DO FIREBASE (INSIRA AQUI)
-        // ==========================================
-        const firebaseConfig = {
-            apiKey: "AIzaSyCBZGHO9APpiZ-8Mgq3TDErFvKW62nnqH0",
-            authDomain: "concenal-sistema.firebaseapp.com",
-            projectId: "concenal-sistema",
-            storageBucket: "concenal-sistema.firebasestorage.app",
-            messagingSenderId: "825709353374",
-            appId: "1:825709353374:web:1dd2657f60fb50b46c5e8f"
-        };
-        // ==========================================
-
-        // --- VARIÁVEIS GLOBAIS ---
-        let db;
-        let unsubscribe = null;
-        let currentUser = null; 
-        let currentStudentForReport = null;
-        let currentJustificationDate = null;
-        let currentJustificationStudentId = null;
-        let creatingUserType = 'teacher';
-        let tempAttendance = {}; 
-        let tempDaily = {};
-
-        const today = new Date().toISOString().split('T')[0];
-        const SUBJECTS = ["Matemática", "Português", "Geografia", "História", "Arte", "Educação Física", "Inglês", "Ciências"];
-        const SUBJECT_DAYS = { "Matemática": 200, "Português": 200, "default": 80 };
-
-        let appData = {
-            currentClass: "9A",
-            currentSubject: "Matemática",
-            currentMode: "grades", 
-            classes: ["6A", "6B", "7A", "7B", "8A", "8B", "9A", "9B"],
-            students: [] 
-        };
-
-        // --- FUNÇÕES UTILITÁRIAS (TOP-LEVEL) ---
-        function switchMode(m) { appData.currentMode = m; updateUI(); }
+        // --- Configurações da API ---
+        const apiKey = "AQ.Ab8RN6JdxaMuOr6ixlblWnIsPi3DCkkG-R5pyjehC-c36Bg55g"; // A chave é injetada no ambiente de execução
         
-        function changeSubject(v) { 
-            if (currentUser.role !== 'parent') { 
-                appData.currentSubject = v; 
-                updateUI(); 
-            } 
-        }
+        // --- Elementos do DOM ---
+        const dropZone = document.getElementById('drop-zone');
+        const fileInput = document.getElementById('file-input');
+        const uploadContent = document.getElementById('upload-content');
+        const imagePreviewContainer = document.getElementById('image-preview-container');
+        const imageGrid = document.getElementById('image-grid');
+        const removeImageBtn = document.getElementById('remove-image-btn');
+        const extractBtn = document.getElementById('extract-btn');
+        const loadingIndicator = document.getElementById('loading-indicator');
+        const resultContainer = document.getElementById('result-container');
+        const resultText = document.getElementById('result-text');
+        const copyBtn = document.getElementById('copy-btn');
+        const notification = document.getElementById('notification');
 
-        function renderClassTabs() { 
-            const c = document.getElementById('class-tabs'); 
-            c.innerHTML = ''; 
-            if (currentUser.role === 'parent') {
-                c.innerHTML = '<span class="text-sm font-bold text-gray-500 p-2">Visão do Responsável</span>';
-                return;
-            }
-            appData.classes.forEach(cls => { 
-                const btn = document.createElement('button'); 
-                btn.className = `px-3 py-1 rounded text-sm whitespace-nowrap border ${appData.currentClass === cls ? 'bg-school-green text-white' : 'bg-white'}`; 
-                btn.innerText = cls; 
-                btn.onclick = () => { appData.currentClass = cls; updateUI(); }; 
-                c.appendChild(btn); 
-            }); 
-        }
+        // Variável principal
+        let uploadedImages = []; 
 
-        function ensureSubjectData(s, subj) { 
-            if (!s.subjects) s.subjects = {};
-            if (!s.subjects[subj]) s.subjects[subj] = { units: [null, null, null, null, null, null], attendance: {}, dailyLogs: {}, observations: [] };
-            
-            const d = s.subjects[subj];
-            if (!d.attendance) d.attendance = {};
-            if (!d.dailyLogs) d.dailyLogs = {};
-            if (!d.observations) d.observations = [];
-            if (!d.units || !Array.isArray(d.units)) d.units = [null, null, null, null, null, null];
-            
-            return d; 
-        }
-
-        function calculateStatus(d) {
-            let sum = 0, filled = 0;
-            if(d.units && Array.isArray(d.units)) {
-                d.units.forEach(u => { if (u !== null && u !== "") { sum += parseFloat(u); filled++; } });
-            }
-            let avg = (sum / 6).toFixed(1);
-            
-            const totalFaults = countFaults(d);
-            const totalDays = SUBJECT_DAYS[appData.currentSubject] || SUBJECT_DAYS['default'];
-            const freqPercent = ((totalDays - totalFaults) / totalDays) * 100;
-            
-            let st = "Cursando", cl = "text-gray-500";
-            
-            if (filled === 6) {
-                if (avg < 6.0) {
-                    if (d.recovery !== null && d.recovery !== "") {
-                        let final = (parseFloat(avg) + parseFloat(d.recovery)) / 2;
-                        st = final >= 6.0 ? "Aprovado (Rec)" : "Reprovado"; 
-                        cl = final >= 6.0 ? "status-badge text-green-700 bg-green-100" : "status-badge text-red-700 bg-red-100";
-                    } else { 
-                        st = "Recuperação"; cl = "status-badge text-orange-700 bg-orange-100"; 
-                    }
-                } else { 
-                    st = "Aprovado"; cl = "status-badge text-green-700 bg-green-100"; 
-                }
-                if (freqPercent < 75) { st = "REPROVADO (FALTAS)"; cl = "status-rf"; }
-            } else {
-                st = ""; cl = "";
-            }
-
-            return { average: avg, status: st, statusClass: cl, faults: totalFaults, freq: freqPercent.toFixed(1), totalDays: totalDays };
-        }
-
-        function countFaults(subData) {
-            if(!subData.attendance) return 0;
-            return Object.values(subData.attendance).filter(v => {
-                if (v === 'F') return true;
-                if (typeof v === 'object' && v.status === 'F' && !v.justified) return true;
-                return false;
-            }).length;
-        }
-
-        function getStudentsByClass() { return appData.students.filter(s => s.class === appData.currentClass).sort((a, b) => a.name.localeCompare(b.name)); }
-        function populateSubjectSelect() { const s = document.getElementById('subject-select'); s.innerHTML = SUBJECTS.map(x => `<option value="${x}">${x}</option>`).join(''); }
-        function populateNewUserSubjectSelect() { 
-            const el = document.getElementById('new-u-subject');
-            if(el) el.innerHTML = document.getElementById('subject-select').innerHTML; 
-        }
-        function closeModal(id) { document.getElementById(id).classList.add('hidden'); }
-        function openAddModal() { document.getElementById('modal-add').classList.remove('hidden'); }
-        function showHistory(id) { openReportModal(id); }
-        function openBulkDeleteModal() { document.getElementById('modal-bulk-delete').classList.remove('hidden'); }
-
-        // --- INIT ---
-        function init() {
-            if (!firebaseConfig.apiKey) { document.getElementById('setup-screen').classList.remove('hidden'); return; }
-            firebase.initializeApp(firebaseConfig);
-            db = firebase.firestore();
-            db.enablePersistence().catch(err => console.log("Persistence error", err));
-
-            const session = localStorage.getItem('concenal_v16_session');
-            if(session) { currentUser = JSON.parse(session); showApp(); } 
-            else { document.getElementById('login-screen').classList.remove('hidden'); }
-
-            document.getElementById('attendance-date').value = today;
-            document.getElementById('daily-date').value = today;
-            populateSubjectSelect();
-            populateNewUserSubjectSelect();
-            
-            document.getElementById('attendance-date').onchange = renderAttendanceTable;
-            document.getElementById('daily-date').onchange = renderDailyLog;
-        }
-
-        // --- AUTH ---
-        document.getElementById('login-form').addEventListener('submit', async (e) => {
+        // --- Lógica de Upload de Arquivo ---
+        dropZone.addEventListener('dragover', (e) => {
             e.preventDefault();
-            const u = document.getElementById('username').value.trim();
-            const p = document.getElementById('password').value.trim();
-            const btn = document.getElementById('btn-login');
-            btn.disabled = true; btn.innerText = "Entrando...";
+            dropZone.classList.add('dragover');
+        });
 
-            try {
-                if (u === "admin" && p === "1234") {
-                    currentUser = { name: "Coordenação", role: "admin", subject: "all" };
-                    finalizeLogin(); return;
-                }
-                const snap = await db.collection('concenal_users').where('username', '==', u).where('password', '==', p).limit(1).get();
-                if (!snap.empty) {
-                    const d = snap.docs[0].data();
-                    currentUser = { name: d.name, role: d.role||'teacher', subject: d.subject||null, studentId: d.studentId||null };
-                    finalizeLogin();
-                } else { throw new Error(); }
-            } catch (error) { 
-                document.getElementById('login-error').classList.remove('hidden'); 
-                btn.disabled = false; btn.innerText = "Entrar"; 
+        dropZone.addEventListener('dragleave', () => {
+            dropZone.classList.remove('dragover');
+        });
+
+        dropZone.addEventListener('drop', (e) => {
+            e.preventDefault();
+            dropZone.classList.remove('dragover');
+            if (e.dataTransfer.files.length > 0) {
+                handleFiles(e.dataTransfer.files);
             }
         });
 
-        function finalizeLogin() {
-            localStorage.setItem('concenal_v16_session', JSON.stringify(currentUser));
-            showApp();
-        }
-
-        function logout() { localStorage.removeItem('concenal_v16_session'); location.reload(); }
-
-        function showApp() {
-            document.getElementById('login-screen').classList.add('hidden');
-            document.getElementById('app-screen').classList.remove('hidden');
-            document.getElementById('user-display-name').innerText = currentUser.name;
-
-            const isParent = currentUser.role === 'parent';
-            const isAdmin = currentUser.role === 'admin';
-
-            document.getElementById('control-bar').classList.toggle('hidden', isParent);
-            document.getElementById('btn-manage-users').classList.toggle('hidden', !isAdmin);
-            document.getElementById('attendance-actions').classList.toggle('hidden', isParent);
-            document.getElementById('daily-actions').classList.toggle('hidden', isParent);
-            
-            if (isAdmin) {
-                document.getElementById('subject-select').disabled = false;
-            } else if (!isParent) {
-                appData.currentSubject = currentUser.subject;
-                document.getElementById('subject-select').value = currentUser.subject;
-                document.getElementById('subject-select').disabled = true;
+        fileInput.addEventListener('change', (e) => {
+            if (e.target.files.length > 0) {
+                handleFiles(e.target.files);
             }
-            startRealtimeSync();
-        }
+        });
 
-        function startRealtimeSync() {
-            document.getElementById('loading-overlay').classList.remove('hidden');
-            unsubscribe = db.collection('concenal_students').onSnapshot((snapshot) => {
-                const students = [];
-                snapshot.forEach((doc) => {
-                    const data = doc.data();
-                    if (currentUser.role === 'parent') {
-                        if (doc.id === currentUser.studentId) {
-                            students.push({ id: doc.id, ...data });
-                            appData.currentClass = data.class; 
-                        }
-                    } else { students.push({ id: doc.id, ...data }); }
-                });
-                appData.students = students;
-                updateUI();
-                document.getElementById('loading-overlay').classList.add('hidden');
+        removeImageBtn.addEventListener('click', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            resetUI();
+        });
+
+        function handleFiles(files) {
+            let addedNew = false;
+            
+            Array.from(files).forEach(file => {
+                if (!file.type.startsWith('image/')) {
+                    showNotification('Por favor, envie apenas imagens (PNG, JPG).', 'bg-red-500');
+                    return;
+                }
+
+                const reader = new FileReader();
+                reader.onload = (e) => {
+                    const result = e.target.result;
+                    const base64Image = result.split(',')[1];
+                    
+                    uploadedImages.push({
+                        mimeType: file.type,
+                        base64: base64Image,
+                        src: result
+                    });
+                    
+                    renderPreviews();
+                };
+                reader.readAsDataURL(file);
+                addedNew = true;
             });
-        }
 
-        function updateUI() {
-            renderClassTabs();
-            if(currentUser.role === 'parent') document.getElementById('class-tabs').innerHTML = '<span class="text-sm font-bold text-gray-500 p-2">Visão do Responsável</span>';
-
-            ['nav-grades','nav-attendance','nav-daily'].forEach(id => {
-                const el = document.getElementById(id);
-                if(el) el.className = "px-3 py-1 rounded text-xs sm:text-sm font-bold text-green-100 hover:text-white flex items-center gap-1";
-            });
-            const active = document.getElementById(`nav-${appData.currentMode}`);
-            if(active) active.className = "px-3 py-1 rounded text-xs sm:text-sm font-bold bg-white text-school-green shadow flex items-center gap-1";
-
-            ['view-grades', 'view-attendance', 'view-daily'].forEach(id => document.getElementById(id).classList.add('hidden'));
-            document.getElementById(`view-${appData.currentMode}`).classList.remove('hidden');
-
-            if (appData.currentMode === 'grades') renderGradesTable();
-            else if (appData.currentMode === 'attendance') renderAttendanceTable();
-            else if (appData.currentMode === 'daily') renderDailyLog();
-        }
-
-        // --- RENDER TABLES ---
-        function renderGradesTable() {
-            const canEdit = currentUser.role !== 'parent';
-            let actionBtns = '';
-            if(canEdit) {
-                actionBtns += `<button onclick="openAddModal()" class="bg-school-green text-white px-3 py-2 rounded text-sm font-bold shadow mr-2"><i class="fas fa-plus"></i> Aluno</button>`;
-                actionBtns += `<button onclick="document.getElementById('modal-import').classList.remove('hidden')" class="bg-blue-600 text-white px-3 py-2 rounded text-sm font-bold shadow mr-2"><i class="fas fa-file-import"></i> Importar</button>`;
-                actionBtns += `<button onclick="openBulkDeleteModal()" class="bg-red-600 text-white px-3 py-2 rounded text-sm font-bold shadow"><i class="fas fa-trash-alt"></i> Excluir em Massa</button>`;
+            if (addedNew) {
+                uploadContent.classList.add('hidden');
+                imagePreviewContainer.classList.remove('hidden');
+                extractBtn.classList.remove('hidden');
+                resultContainer.classList.add('hidden');
+                resultContainer.classList.remove('opacity-100');
             }
-            document.getElementById('action-buttons').innerHTML = actionBtns;
-            
-            const tbody = document.getElementById('grades-body'); tbody.innerHTML = '';
-            const students = getStudentsByClass();
-            
-            if (students.length === 0) { document.getElementById('empty-state').classList.remove('hidden'); return; }
-            document.getElementById('empty-state').classList.add('hidden');
-
-            students.forEach(s => {
-                const subData = ensureSubjectData(s, appData.currentSubject);
-                const calc = calculateStatus(subData);
-                const faultColor = calc.freq < 75 ? "text-red-700 bg-red-50" : "text-blue-800";
-
-                let row = `<tr class="hover:bg-gray-50 border-b">
-                    <td class="px-4 py-3 border-r group flex justify-between items-center">
-                        <div><span class="font-bold text-gray-700">${s.name}</span>${canEdit ? `<br><span class="text-[10px] text-gray-400 select-all copy-id" title="Copiar ID">ID: ${s.id}</span>` : ''}</div>
-                        <div class="gap-2 flex"><button onclick="openReportModal('${s.id}')" class="text-blue-500"><i class="fas fa-file-alt"></i></button>${canEdit ? `<button onclick="deleteStudent('${s.id}')" class="text-red-300 hover:text-red-500 opacity-0 group-hover:opacity-100"><i class="fas fa-trash"></i></button>` : ''}</div>
-                    </td>`;
-                for(let i=0; i<6; i++) {
-                    const v = subData.units[i] ?? '';
-                    const c = (v!=='' && v<6) ? 'text-red-600 font-bold' : 'text-green-700';
-                    const disabled = !canEdit ? 'disabled' : '';
-                    row += `<td class="px-1 border-l"><input type="number" step="0.1" ${disabled} class="w-full text-center bg-transparent focus:outline-none ${c}" value="${v}" onchange="updateGrade('${s.id}', ${i}, this.value)"></td>`;
-                }
-                row += `<td class="px-1 text-center font-bold border-l cursor-pointer ${faultColor}" onclick="showHistory('${s.id}')">${calc.faults} <span class="text-[10px] block font-normal opacity-75">${100 - calc.freq}%</span></td><td class="px-2 text-center font-bold border-l">${calc.average}</td><td class="px-1 border-l"><input type="number" step="0.1" ${!canEdit || calc.average >= 6 ? 'disabled' : ''} class="w-full text-center ${calc.average >= 6 ? 'bg-gray-100' : 'bg-red-50 text-red-700'}" value="${subData.recovery ?? ''}" onchange="updateRecovery('${s.id}', this.value)"></td><td class="px-2 text-center uppercase border-l"><span class="${calc.statusClass}">${calc.status || "--"}</span></td></tr>`;
-                tbody.innerHTML += row;
-            });
         }
 
-        function renderAttendanceTable() {
-            const tbody = document.getElementById('attendance-body'); tbody.innerHTML = '';
-            const date = document.getElementById('attendance-date').value;
-            const students = getStudentsByClass();
-            const canEdit = currentUser.role !== 'parent';
-            tempAttendance = {};
-
-            if (students.length === 0) { document.getElementById('empty-state-attendance').classList.remove('hidden'); return; }
-            document.getElementById('empty-state-attendance').classList.add('hidden');
-
-            let html = '';
-            students.forEach(s => {
-                const subData = ensureSubjectData(s, appData.currentSubject);
-                const record = subData.attendance[date]; 
-                let status = 'P', isJustified = false, hasDoc = false;
-                if (record) {
-                    if (typeof record === 'string') { status = record; }
-                    else { status = record.status; isJustified = record.justified; hasDoc = !!record.doc; }
-                }
-                tempAttendance[s.id] = record || 'P';
-
-                let cls = status==='P' ? "bg-green-100 text-green-800" : (isJustified ? "bg-blue-100 text-blue-800" : "bg-red-100 text-red-800");
-                let txt = status==='P' ? "PRESENTE" : (isJustified ? "JUSTIFICADO" : "FALTOU");
-                let attachBtn = (status==='F'||isJustified) ? (currentUser.role==='parent' ? `<button onclick="openJustifyModal('${s.id}')" class="ml-2 text-xs text-blue-500 underline">Justificar</button>` : (hasDoc ? `<button onclick="viewDoc('${s.id}', '${date}')" class="ml-2 text-xs text-blue-500"><i class="fas fa-paperclip"></i></button>` : '')) : '';
-
-                html += `<tr><td class="px-6 py-4 font-bold text-gray-700 flex justify-between items-center">${s.name} ${attachBtn}</td><td class="px-6 py-4 text-center"><button id="btn-att-${s.id}" onclick="toggleAttendance('${s.id}')" ${!canEdit?'disabled':''} class="w-32 py-2 rounded shadow text-xs font-bold border ${cls}">${txt}</button></td></tr>`;
-            });
-            tbody.innerHTML = html;
-        }
-
-        function renderDailyLog() {
-            const tbody = document.getElementById('daily-body'); tbody.innerHTML = '';
-            const date = document.getElementById('daily-date').value;
-            const students = getStudentsByClass();
-            const canEdit = currentUser.role !== 'parent';
-            tempDaily = {};
-
-            let html = '';
-            students.forEach(s => {
-                const subData = ensureSubjectData(s, appData.currentSubject);
-                const todayLog = (subData.dailyLogs || {})[date] || { homework: false, behavior: 'Normal' };
-                tempDaily[s.id] = { ...todayLog };
-                const hwClass = todayLog.homework ? 'bg-green-500 text-white' : 'bg-gray-200 text-gray-400';
-                
-                html += `<tr class="border-b"><td class="px-4 py-3 font-medium">${s.name}</td><td class="px-2 py-3 text-center"><button id="btn-hw-${s.id}" onclick="toggleHomework('${s.id}')" ${!canEdit?'disabled':''} class="w-8 h-8 rounded-full shadow transition ${hwClass}"><i class="fas fa-home"></i></button></td><td class="px-2 py-3 text-center"><select onchange="updateBehavior('${s.id}', this.value)" ${!canEdit?'disabled':''} class="border rounded text-xs p-1 font-bold"><option ${todayLog.behavior==='Normal'?'selected':''}>Normal</option><option ${todayLog.behavior==='Excelente'?'selected':''}>Excelente</option><option ${todayLog.behavior==='Conversou'?'selected':''}>Conversou</option><option ${todayLog.behavior==='Ruim'?'selected':''}>Ruim</option></select></td></tr>`;
-            });
-            tbody.innerHTML = html;
-        }
-
-        // --- CRUD ---
-        function toggleAttendance(id) {
-            let curr = tempAttendance[id];
-            let status = typeof curr === 'string' ? curr : curr.status;
-            let newStatus = status === 'P' ? 'F' : 'P'; 
-            if(typeof curr === 'object') { curr.status = newStatus; tempAttendance[id] = curr; } else { tempAttendance[id] = newStatus; }
-            const btn = document.getElementById(`btn-att-${id}`);
-            if (newStatus === 'P') { btn.className = "w-32 py-2 rounded shadow text-xs font-bold border bg-green-100 text-green-800 border-green-200 transition transform scale-105"; btn.innerText = "PRESENTE"; } 
-            else { btn.className = "w-32 py-2 rounded shadow text-xs font-bold border bg-red-100 text-red-800 border-red-200 transition transform scale-105"; btn.innerText = "FALTOU"; }
-        }
-
-        function toggleHomework(id) {
-            tempDaily[id].homework = !tempDaily[id].homework;
-            const btn = document.getElementById(`btn-hw-${id}`);
-            if(tempDaily[id].homework) btn.className = "w-8 h-8 rounded-full shadow transition bg-green-500 text-white transform scale-110";
-            else btn.className = "w-8 h-8 rounded-full shadow transition bg-gray-200 text-gray-400";
-        }
-        function updateBehavior(id, val) { tempDaily[id].behavior = val; }
-
-        async function saveDailyAttendance() {
-            const date = document.getElementById('attendance-date').value;
-            let batch = db.batch();
-            appData.students.forEach(s => { if(s.class === appData.currentClass) {
-                const sd = ensureSubjectData(s, appData.currentSubject); sd.attendance[date] = tempAttendance[s.id];
-                batch.set(db.collection('concenal_students').doc(s.id), { subjects: { [appData.currentSubject]: { attendance: sd.attendance } } }, { merge: true });
-            }});
-            await batch.commit(); alert("Chamada salva com sucesso!");
-        }
-        async function saveDailyLog() {
-            const date = document.getElementById('daily-date').value;
-            let batch = db.batch();
-            appData.students.forEach(s => { if(s.class === appData.currentClass) {
-                const sd = ensureSubjectData(s, appData.currentSubject); sd.dailyLogs[date] = tempDaily[s.id];
-                batch.set(db.collection('concenal_students').doc(s.id), { subjects: { [appData.currentSubject]: { dailyLogs: sd.dailyLogs } } }, { merge: true });
-            }});
-            await batch.commit(); alert("Diário salvo com sucesso!");
-        }
-
-        function updateGrade(id, idx, val) { 
-            const s = appData.students.find(st => st.id === id); 
-            const sd = ensureSubjectData(s, appData.currentSubject); sd.units[idx] = val; 
-            db.collection('concenal_students').doc(s.id).set({ subjects:{ [appData.currentSubject]:{units:sd.units} } },{merge:true}); 
-        }
-        function updateRecovery(id, val) { const s = appData.students.find(st => st.id === id); db.collection('concenal_students').doc(s.id).set({subjects:{[appData.currentSubject]:{recovery:val}}},{merge:true}); }
-        function addStudent() { const n = document.getElementById('new-name').value; db.collection('concenal_students').add({ name: n, class: appData.currentClass, subjects: {} }); closeModal('modal-add'); }
-        async function importStudents() {
-            const list = document.getElementById('import-list').value.split('\n'); let batch = db.batch();
-            list.forEach(name => { if(name.trim()) batch.set(db.collection('concenal_students').doc(), { name: name.trim(), class: appData.currentClass, subjects: {} }); });
-            await batch.commit(); closeModal('modal-import'); alert("Importação concluída!");
-        }
-        function deleteStudent(id) { if(confirm("Excluir?")) db.collection('concenal_students').doc(id).delete(); }
-        
-        // --- BULK DELETE ---
-        async function bulkDeleteStudents() {
-            const list = document.getElementById('bulk-delete-list').value.split('\n').map(n => n.trim()).filter(n => n);
-            if(list.length === 0) return alert("Cole uma lista de nomes.");
-            
-            if(!confirm(`Tem certeza que deseja excluir ${list.length} alunos da turma ${appData.currentClass}?`)) return;
-
-            let batch = db.batch();
-            let deletedCount = 0;
-            const studentsInClass = getStudentsByClass();
-
-            list.forEach(nameToRemove => {
-                // Find student by name (case insensitive match)
-                const student = studentsInClass.find(s => s.name.toLowerCase() === nameToRemove.toLowerCase());
-                if(student) {
-                    batch.delete(db.collection('concenal_students').doc(student.id));
-                    deletedCount++;
-                }
-            });
-
-            if(deletedCount > 0) {
-                await batch.commit();
-                closeModal('modal-bulk-delete');
-                alert(`${deletedCount} alunos excluídos com sucesso!`);
+        window.removeSingleImage = function(index) {
+            uploadedImages.splice(index, 1);
+            if (uploadedImages.length === 0) {
+                resetUI();
             } else {
-                alert("Nenhum aluno encontrado com esses nomes na turma atual.");
+                renderPreviews();
             }
-        }
+        };
 
-        async function bulkDeleteAllClass() {
-             if(!confirm(`ATENÇÃO: Isso apagará TODOS os alunos da turma ${appData.currentClass}. Tem certeza absoluta?`)) return;
-             
-             const studentsInClass = getStudentsByClass();
-             if(studentsInClass.length === 0) return alert("Turma já está vazia.");
-
-             let batch = db.batch();
-             studentsInClass.forEach(s => {
-                 batch.delete(db.collection('concenal_students').doc(s.id));
-             });
-             
-             await batch.commit();
-             closeModal('modal-bulk-delete');
-             alert("Turma limpa com sucesso.");
-        }
-
-        // --- RELATÓRIO MANUAL ---
-        function openReportModal(id) { 
-            currentStudentForReport=appData.students.find(s=>s.id===id); 
-            if(!currentStudentForReport) return alert("Erro ao abrir aluno.");
-            
-            const subData = ensureSubjectData(currentStudentForReport, appData.currentSubject);
-            const calc = calculateStatus(subData);
-
-            document.getElementById('report-name').innerText = currentStudentForReport.name;
-            document.getElementById('report-avg').innerText = calc.average;
-            document.getElementById('report-freq').innerText = calc.freq + '%';
-            document.getElementById('report-status').innerText = calc.status || "--";
-            
-            // Fix for missing elements if they were removed from HTML
-            const bar = document.getElementById('report-freq-bar');
-            if(bar) {
-                bar.style.width = `${calc.freq}%`;
-                bar.className = `h-1.5 rounded-full ${calc.freq < 75 ? 'bg-red-600' : 'bg-green-600'}`;
-            }
-            const daysCount = document.getElementById('report-days-count');
-            if(daysCount) daysCount.innerText = `${calc.faults} Faltas (${(calc.totalDays - calc.faults)}/${calc.totalDays} dias)`;
-
-            renderObservationsList(subData.observations || []);
-            
-            const tools = document.getElementById('report-tools');
-            const parentMsg = document.getElementById('report-parent-msg');
-
-            document.getElementById('new-observation-date').value = today;
-
-            if (currentUser.role === 'parent') {
-                tools.classList.add('hidden');
-                parentMsg.classList.remove('hidden');
-            } else {
-                tools.classList.remove('hidden');
-                parentMsg.classList.add('hidden');
-            }
-
-            document.getElementById('modal-report').classList.remove('hidden'); 
-        }
-
-        function renderObservationsList(obsList) {
-            const container = document.getElementById('observations-list');
-            container.innerHTML = '';
-            
-            if (!obsList || obsList.length === 0) {
-                container.innerHTML = '<p class="text-sm text-gray-400 italic text-center p-2">Nenhuma observação registrada ainda.</p>';
-                return;
-            }
-
-            const sorted = [...obsList].reverse();
-            sorted.forEach(obs => {
+        function renderPreviews() {
+            imageGrid.innerHTML = '';
+            uploadedImages.forEach((img, index) => {
                 const div = document.createElement('div');
-                div.className = "bg-white border border-gray-200 rounded p-3 text-sm shadow-sm";
+                div.className = 'relative group';
                 div.innerHTML = `
-                    <div class="flex justify-between items-center mb-1">
-                        <span class="font-bold text-gray-700 text-xs">${obs.date.split('-').reverse().join('/')}</span>
-                        <span class="text-[10px] text-gray-400 uppercase">${obs.author}</span>
-                    </div>
-                    <p class="text-gray-600">${obs.text}</p>
+                    <img src="${img.src}" class="h-24 w-24 object-cover rounded-lg border border-slate-600 shadow-sm" alt="Print ${index + 1}">
+                    <button onclick="window.removeSingleImage(${index})" class="absolute -top-2 -right-2 bg-red-500 text-white rounded-full w-6 h-6 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity shadow-md hover:bg-red-600">
+                        <i class="fa-solid fa-times text-xs"></i>
+                    </button>
                 `;
-                container.appendChild(div);
+                imageGrid.appendChild(div);
             });
         }
 
-        async function addObservation() {
-            const text = document.getElementById('new-observation-text').value.trim();
-            const dateVal = document.getElementById('new-observation-date').value;
+        function resetUI() {
+            uploadedImages = [];
+            fileInput.value = '';
+            imageGrid.innerHTML = '';
             
-            if (!text) return alert("Digite o texto da observação.");
-            if (!dateVal) return alert("Selecione a data.");
-
-            const s = currentStudentForReport;
-            const subData = ensureSubjectData(s, appData.currentSubject);
-            
-            subData.observations.push({ date: dateVal, text: text, author: currentUser.name });
-            await db.collection('concenal_students').doc(s.id).set({ subjects: { [appData.currentSubject]: { observations: subData.observations } } }, { merge: true });
-            
-            document.getElementById('new-observation-text').value = '';
-            renderObservationsList(subData.observations);
+            uploadContent.classList.remove('hidden');
+            imagePreviewContainer.classList.add('hidden');
+            extractBtn.classList.add('hidden');
+            resultContainer.classList.add('hidden');
+            resultContainer.classList.remove('opacity-100');
         }
-        
-        // --- USERS & GESTÃO ---
-        function openJustifyModal(sid) { currentJustificationStudentId=sid; currentJustificationDate=document.getElementById('attendance-date').value; document.getElementById('just-date-display').innerText=`Data: ${currentJustificationDate}`; document.getElementById('modal-justification').classList.remove('hidden'); }
-        function compressImage(f,cb){ const r=new FileReader(); r.readAsDataURL(f); r.onload=e=>{ const i=new Image(); i.src=e.target.result; i.onload=()=>{ const c=document.createElement('canvas'); const s=400/Math.max(i.width,i.height); c.width=i.width*s; c.height=i.height*s; c.getContext('2d').drawImage(i,0,0,c.width,c.height); cb(c.toDataURL('image/jpeg',0.7)); }}; }
-        async function submitJustification(){ const r=document.getElementById('just-reason').value; const f=document.getElementById('just-file').files[0]; const save=(b64)=>{ const s=appData.students.find(x=>x.id===currentJustificationStudentId); const d=ensureSubjectData(s, appData.currentSubject); d.attendance[currentJustificationDate]={status:'F',justified:true,reason:r,doc:b64}; db.collection('concenal_students').doc(s.id).set({subjects:{[appData.currentSubject]:{attendance:d.attendance}}},{merge:true}); closeModal('modal-justification'); alert("Enviado!"); renderAttendanceTable(); }; if(f) compressImage(f,save); else save(null); }
-        function viewDoc(sid,dt){ const s=appData.students.find(x=>x.id===sid); const r=s.subjects[appData.currentSubject].attendance[dt]; if(r&&r.doc) { const w=window.open(""); w.document.write(`<img src="${r.doc}" style="max-width:100%">`); } }
-        function openUsersModal(){ document.getElementById('modal-users').classList.remove('hidden'); switchUserTab('teacher'); }
-        function switchUserTab(t){ creatingUserType=t; document.getElementById('tab-teacher').className=t==='teacher'?"px-3 py-1 font-bold text-sm border-b-2 border-school-green text-school-green":"px-3 py-1 font-bold text-sm text-gray-500"; document.getElementById('tab-parent').className=t==='parent'?"px-3 py-1 font-bold text-sm border-b-2 border-school-green text-school-green":"px-3 py-1 font-bold text-sm text-gray-500"; document.getElementById('field-teacher-subj').classList.toggle('hidden',t!=='teacher'); document.getElementById('field-parent-student').classList.toggle('hidden',t!=='parent'); loadUsersList(); }
-        async function createUser(){ const n=document.getElementById('new-u-name').value; const l=document.getElementById('new-u-login').value; const p=document.getElementById('new-u-pass').value; let ex={role:creatingUserType}; if(creatingUserType==='teacher') ex.subject=document.getElementById('new-u-subject').value; else ex.studentId=document.getElementById('new-u-student-id').value; await db.collection('concenal_users').add({name:n,username:l,password:p,...ex}); alert("Criado!"); loadUsersList(); }
-        function loadUsersList(){ const d=document.getElementById('users-list'); d.innerHTML='...'; db.collection('concenal_users').where('role','==',creatingUserType).get().then(s=>{ d.innerHTML=''; s.forEach(doc=>{ const da=doc.data(); d.innerHTML+=`<div class="flex justify-between p-2 bg-gray-50 mb-1 rounded border"><div><b>${da.name}</b> (${da.username})</div><button onclick="db.collection('concenal_users').doc('${doc.id}').delete().then(loadUsersList)" class="text-red-500"><i class="fas fa-trash"></i></button></div>`; }); }); }
 
-        init();
+        // --- Lógica de Extração via API (Gemini Vision) ---
+        
+        async function fetchWithRetry(url, options, retries = 5) {
+            const delays = [1000, 2000, 4000, 8000, 16000];
+            for (let i = 0; i < retries; i++) {
+                try {
+                    const response = await fetch(url, options);
+                    if (!response.ok) {
+                        const errText = await response.text();
+                        throw new Error(`HTTP error! status: ${response.status}, message: ${errText}`);
+                    }
+                    return await response.json();
+                } catch (error) {
+                    if (i === retries - 1) throw error;
+                    await new Promise(resolve => setTimeout(resolve, delays[i]));
+                }
+            }
+        }
+
+        extractBtn.addEventListener('click', async () => {
+            if (uploadedImages.length === 0) return;
+
+            // UI Loading state
+            extractBtn.classList.add('hidden');
+            loadingIndicator.classList.remove('hidden');
+            resultContainer.classList.add('hidden');
+            resultContainer.classList.remove('opacity-100');
+
+            // Descobre qual modo o usuário selecionou (CC ou LTC)
+            const extractionType = document.querySelector('input[name="extractionType"]:checked').value;
+            let promptInstruction = "";
+
+            if (extractionType === 'cc') {
+                promptInstruction = `
+Você é um extrator e organizador de dados especializado. 
+Sua tarefa é ler a(s) imagem(ns) anexada(s) e extrair os dados para preencher ESTRITAMENTE o modelo fornecido abaixo.
+As imagens podem conter partes de um mesmo ticket ou múltiplos tickets diferentes.
+- Se os dados nas imagens se complementarem para o mesmo ticket, junte tudo em um único preenchimento.
+- Se identificar múltiplos tickets independentes, preencha o modelo para CADA ticket, separando por uma linha em branco.
+
+Regras importantes de mapeamento:
+1. Onde diz 'Numero' na imagem, coloque no campo 'CC'.
+2. Onde diz 'Level' na imagem, coloque no campo 'Nível'.
+3. Onde diz 'Assunto' na imagem, coloque no campo 'Cliente diz'.
+4. Se o ticket vier do Telegram (com User Telegram), coloque o nome do 'User'.
+5. 'Cliente desde' pode ser inferido da data do 'Primeiro login' ou da data do pedido. Extraia apenas o Mês/Ano ou a data curta.
+6. CÓDIGO DE FRAUDE (CRÍTICO ABSOLUTO PARA OCR): Este campo costuma conter um bloco de texto gigante com centenas de números separados por traços (ex: #2-8648-75999...), que ocupa MÚLTIPLAS LINHAS na tela. TRANSCREVA LITERALMENTE CADA CARACTERE. Junte todas as linhas desse código em UMA ÚNICA LINHA na sua resposta, sem espaços em branco. É expressamente proibido resumir, cortar, pular linhas ou usar reticências (...). Você deve extrair 100% da sequência numérica. Se na imagem houver um 'Lote', coloque o valor do Lote aqui em vez do código de fraude.
+7. MANTENHA A LINHA "Cliente: Regular" EXATAMENTE COMO ESTÁ. Não a remova nem altere.
+8. Se não encontrar uma informação (ex: Banco), deixe a linha vazia logo após os dois pontos (ex: 'Banco: ').
+
+RETORNE APENAS OS TEXTOS PREENCHIDOS, SEM NENHUMA INTRODUÇÃO, CONCLUSÃO OU FORMATAÇÃO MARKDOWN (sem \`\`\`).
+
+Modelo a ser preenchido:
+Ticket: 
+CC: 
+Banco: 
+Nível: 
+User: 
+
+Cliente diz: 
+
+Cliente desde: 
+Cliente: Regular
+
+CÓDIGO DE FRAUDE: `;
+
+            } else if (extractionType === 'ltc') {
+                promptInstruction = `
+Você é um extrator e organizador de dados especializado. 
+Sua tarefa é ler a(s) imagem(ns) anexada(s) e extrair os dados de pagamentos via LTC para preencher ESTRITAMENTE o modelo fornecido abaixo.
+As imagens podem conter partes de um mesmo ticket ou múltiplos tickets diferentes. Junte as informações de imagens diferentes que pertençam ao mesmo ticket. Se identificar múltiplos tickets independentes, preencha o modelo para CADA ticket.
+
+Regras de mapeamento EXCLUSIVAS PARA LTC:
+1. 'Ticket': Pegue o número do ticket (ex: 22370).
+2. 'Telegram': Pegue o "User Telegram" e coloque um "@" no início, se já não tiver (ex: @Dico).
+3. 'User': O nome de usuário do painel (ex: dicosynap).
+4. 'Valor em Reais' e 'LTC': Preencha na mesma linha combinando os valores informados na imagem. Exemplo de saída: "R$ 48,00 ≈ 0,19939566 LTC".
+5. 'Carteira': Endereço da Carteira LTC informado.
+6. 'TXID': Transcreva LITERALMENTE todo o hash/Txid fornecido na imagem. É um código grande e não deve ser resumido.
+7. Se faltar alguma informação na imagem, deixe o campo em branco logo após os dois pontos.
+
+RETORNE APENAS OS TEXTOS PREENCHIDOS, SEM NENHUMA INTRODUÇÃO, CONCLUSÃO OU FORMATAÇÃO MARKDOWN (sem \`\`\`).
+
+Modelo a ser preenchido:
+Ticket: 
+Telegram: 
+User: 
+Valor em Reais: R$ [valor em reais] ≈ [quantidade] LTC
+Carteira: 
+
+TXID: `;
+            }
+
+            // Adiciona a instrução e todas as imagens no payload
+            const parts = [{ text: promptInstruction }];
+            uploadedImages.forEach(img => {
+                parts.push({
+                    inlineData: { mimeType: img.mimeType, data: img.base64 }
+                });
+            });
+
+            const payload = {
+                contents: [{
+                    role: "user",
+                    parts: parts
+                }]
+            };
+
+            const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${apiKey}`;
+
+            try {
+                const result = await fetchWithRetry(apiUrl, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+
+                const extractedText = result.candidates?.[0]?.content?.parts?.[0]?.text;
+
+                if (extractedText) {
+                    // Limpar marcações de markdown residuais
+                    let cleanText = extractedText.replace(/```text/g, '').replace(/```/g, '').trim();
+                    
+                    resultText.value = cleanText;
+                    
+                    // Show result
+                    loadingIndicator.classList.add('hidden');
+                    extractBtn.classList.remove('hidden');
+                    resultContainer.classList.remove('hidden');
+                    setTimeout(() => resultContainer.classList.add('opacity-100'), 50);
+                } else {
+                    throw new Error("Não foi possível extrair o texto da resposta da IA.");
+                }
+
+            } catch (error) {
+                console.error("Erro na extração:", error);
+                loadingIndicator.classList.add('hidden');
+                extractBtn.classList.remove('hidden');
+                showNotification('Erro ao analisar a imagem. Tente novamente.', 'bg-red-500');
+            }
+        });
+
+        // --- Lógica de Cópia ---
+        copyBtn.addEventListener('click', () => {
+            resultText.select();
+            resultText.setSelectionRange(0, 99999); // Para mobile
+
+            try {
+                const successful = document.execCommand('copy');
+                if (successful) {
+                    showNotification('Texto copiado com sucesso!', 'bg-emerald-500');
+                    
+                    const originalHTML = copyBtn.innerHTML;
+                    copyBtn.innerHTML = '<i class="fa-solid fa-check mr-2"></i> Copiado';
+                    copyBtn.classList.add('bg-emerald-600', 'text-white');
+                    copyBtn.classList.remove('bg-slate-700', 'text-slate-200');
+                    
+                    setTimeout(() => {
+                        copyBtn.innerHTML = originalHTML;
+                        copyBtn.classList.remove('bg-emerald-600', 'text-white');
+                        copyBtn.classList.add('bg-slate-700', 'text-slate-200');
+                    }, 2000);
+                } else {
+                    showNotification('Falha ao copiar texto.', 'bg-red-500');
+                }
+            } catch (err) {
+                showNotification('Erro ao copiar. Tente selecionar e copiar manualmente.', 'bg-red-500');
+            }
+            
+            window.getSelection().removeAllRanges();
+        });
+
+        // --- Notificações ---
+        let notificationTimeout;
+        function showNotification(message, colorClass) {
+            const icon = colorClass.includes('emerald') ? 'fa-check-circle' : 'fa-circle-exclamation';
+            const notificationText = document.getElementById('notification-text');
+            
+            notification.className = `fixed bottom-5 right-5 transform transition-all duration-300 px-6 py-3 rounded-lg shadow-lg font-medium flex items-center z-50 ${colorClass}`;
+            notificationText.innerHTML = message;
+            
+            // Mostrar
+            notification.classList.remove('translate-y-20', 'opacity-0');
+            
+            // Esconder depois de 3 segundos
+            clearTimeout(notificationTimeout);
+            notificationTimeout = setTimeout(() => {
+                notification.classList.add('translate-y-20', 'opacity-0');
+            }, 3000);
+        }
+
     </script>
 </body>
 </html>
