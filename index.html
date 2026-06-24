@@ -8113,7 +8113,31 @@
             return;
         }
         w.document.open();
-        w.document.write('<!doctype html><html><head><meta charset="UTF-8"><title>'+esc(title || 'Impressão')+'</title>'+css+'</head><body>'+html+'<script>setTimeout(function(){window.focus();window.print();},500);<\/script></body></html>');
+        w.document.write('<!doctype html><html><head><meta charset="UTF-8"><title>'+esc(title || 'Impressão')+'</title>'+css+'</head><body>'+html+'<script>setTimeout(function(){window.focus();window.print();},500);<\/script>
+<!-- PATCH V158: estabilização do painel inicial mobile do professor -->
+<!-- PATCH V159: privacidade rígida no chat professor ↔ direção, sem vazar mensagens direção ↔ responsável -->
+<style id="concenal-v158-mobile-menu-stability">
+  /* Corrige o efeito de piscar sem alterar módulos, notas, relatórios ou dashboard. */
+  #v116-hero[data-v158-stable="true"],
+  #v116-hero[data-v158-stable="true"] *{
+    animation-duration:0s!important;
+    animation-delay:0s!important;
+  }
+  #v116-hero,
+  #v123-panel-selectors,
+  #v122-modules-center{
+    backface-visibility:hidden;
+    transform:translateZ(0);
+  }
+  @media(max-width:900px){
+    #v116-hero{contain:layout paint;}
+    #v123-panel-selectors select{
+      transition:none!important;
+    }
+  }
+</style>
+
+</body></html>');
         w.document.close();
     }
     window.printBehaviorReport = async function(mass){
@@ -11259,8 +11283,33 @@
     const myA = currentAliases();
     const themA = selectedAliases();
     const fromA = msgFromAliases(m);
-    const toA = msgToAliases(m).concat(msgParticipants(m));
+    const rawToA = msgToAliases(m);
+    const partA = msgParticipants(m);
+    const toA = rawToA.concat(partA);
     const convKey = norm(m.conversationKey || m.conversaKey || m.threadKey || '');
+
+    if(sel.type === 'direction'){
+      const dirA = directionAliases();
+      const possible = allDirectKeys(myA, dirA).map(norm);
+      const hasParentContext = !!(
+        (m && (m.ticketParentId || m.routeParentId || m.parentId || m.responsavelId || m.responsavel || m.parentName || m.parentEmail)) ||
+        norm((m||{}).toRole).indexOf('respons') >= 0 ||
+        norm((m||{}).fromRole).indexOf('respons') >= 0
+      );
+
+      // V159: professor no chat da Direção só vê professor <-> direção.
+      // Antes o campo participants colocava aliases da direção em mensagens direção <-> responsável,
+      // então essas mensagens também entravam no chat do professor.
+      if(convKey) return possible.indexOf(convKey) >= 0;
+
+      const fromMeToDirection = intersects(fromA, myA) && intersects(rawToA, dirA);
+      const directionToMe = intersects(fromA, dirA) && intersects(rawToA, myA);
+      if(fromMeToDirection || directionToMe) return true;
+
+      // Compatibilidade com mensagens antigas sem to/toId, mas sem aceitar atendimentos de responsável.
+      if(!hasParentContext && intersects(partA, myA) && intersects(partA, dirA)) return true;
+      return false;
+    }
 
     if(convKey){
       const possible = allDirectKeys(myA, themA).map(norm);
@@ -11272,12 +11321,6 @@
     const fromThem = intersects(fromA, themA);
     const toThem = intersects(toA, themA);
 
-    if(sel.type === 'direction'){
-      const dirA = directionAliases();
-      const fromAnyDirection = intersects(fromA, dirA);
-      const toAnyDirection = intersects(toA, dirA);
-      return (fromThem && toAnyDirection) || (fromAnyDirection && toThem) || (fromMe && toThem) || (fromThem && toMe);
-    }
     return (fromMe && toThem) || (fromThem && toMe);
   }
 
@@ -12563,13 +12606,50 @@
     var d = getData();
     var subject = str(d.currentSubject || 'Todas');
     var klass = str(d.currentClass || 'Geral');
+    var alunoCount = countCurrentClassStudents();
+    var frase = phrase();
     var top = ensureTopGreeting();
-    if(top){ top.innerHTML = '<i class="fas '+g.icon+'"></i><span>'+esc(g.text)+', '+esc(firstName(name))+'</span><span>•</span><span>'+esc(timeShort())+'</span>'; }
+
+    // V158: evita redesenhar o painel principal em ciclos repetidos no mobile.
+    // O horário pode atualizar, mas sem apagar e recriar toda a área.
+    if(top){
+      var topHTML = '<i class="fas '+g.icon+'"></i><span>'+esc(g.text)+', '+esc(firstName(name))+'</span><span>•</span><span>'+esc(timeShort())+'</span>';
+      if(top.getAttribute('data-v158-html') !== topHTML){
+        top.innerHTML = topHTML;
+        top.setAttribute('data-v158-html', topHTML);
+      }
+    }
+
     var hero = ensureHero();
     if(!hero) return;
     var subtitle = role.toLowerCase().indexOf('respons') >= 0
       ? 'Acompanhe comunicados, atividades, relatórios e atendimentos escolares em um ambiente simples e seguro.'
       : 'Gerencie notas, frequências, relatórios, planejamentos e comunicação escolar com uma entrada mais moderna e organizada.';
+
+    var signature = [
+      name, role, subject, klass, alunoCount, g.text, g.note, subtitle, frase
+    ].join('||');
+
+    if(hero.getAttribute('data-v158-hero-signature') === signature && hero.querySelector('.v116-hero-inner')){
+      var kicker = hero.querySelector('.v116-kicker');
+      if(kicker){
+        kicker.innerHTML = '<i class="fas '+g.icon+'"></i><span>'+esc(dateLong())+'</span><span>•</span><span>'+esc(timeShort())+'</span>';
+      }
+      var minis = hero.querySelectorAll('.v116-mini');
+      minis.forEach(function(card){
+        var label = card.querySelector('.v116-mini-label');
+        var value = card.querySelector('.v116-mini-value');
+        var l = str(label && label.textContent).toLowerCase();
+        if(!value) return;
+        if(l.indexOf('turma') >= 0) value.textContent = klass;
+        else if(l.indexOf('disciplina') >= 0) value.textContent = subject;
+        else if(l.indexOf('alunos') >= 0) value.textContent = alunoCount;
+      });
+      return;
+    }
+
+    hero.setAttribute('data-v158-hero-signature', signature);
+    hero.setAttribute('data-v158-stable','true');
     hero.innerHTML = ''+
       '<div class="v116-hero-inner">'+
         '<div>'+
@@ -12583,13 +12663,12 @@
           '<div class="v116-mini-grid">'+
             '<div class="v116-mini"><div class="v116-mini-label">Turma</div><div class="v116-mini-value">'+esc(klass)+'</div></div>'+ 
             '<div class="v116-mini"><div class="v116-mini-label">Disciplina</div><div class="v116-mini-value">'+esc(subject)+'</div></div>'+ 
-            '<div class="v116-mini"><div class="v116-mini-label">Alunos da turma</div><div class="v116-mini-value">'+esc(countCurrentClassStudents())+'</div></div>'+ 
+            '<div class="v116-mini"><div class="v116-mini-label">Alunos da turma</div><div class="v116-mini-value">'+esc(alunoCount)+'</div></div>'+ 
           '</div>'+ 
-          '<div class="v116-quote"><i class="fas fa-quote-left mt-1"></i><span>'+esc(phrase())+'</span></div>'+ 
+          '<div class="v116-quote"><i class="fas fa-quote-left mt-1"></i><span>'+esc(frase)+'</span></div>'+ 
         '</aside>'+ 
       '</div>';
   }
-
   function hook(name){
     var fn = window[name];
     if(typeof fn !== 'function' || fn.__v116Hooked) return;
@@ -13179,9 +13258,23 @@
   }
   function renderModulesPanel(host){
     var current = selectedMode || (window.appData && window.appData.currentMode) || 'grades';
+    var list = modes();
+    var signature = current + ':' + list.map(function(m){ return m.id + '|' + m.name; }).join('||');
+
+    // V157: no mobile, o painel principal do professor ficava piscando porque este bloco era redesenhado a cada ciclo.
+    // Agora só redesenha quando a lista de módulos ou o módulo ativo realmente muda.
+    if(host.getAttribute('data-v157-menu-signature') === signature && host.querySelector('.v122-modules-shell')){
+      host.querySelectorAll('.v122-module-card').forEach(function(card){
+        var on = card.getAttribute('data-v122-mode') === current;
+        card.classList.toggle('is-active', on);
+      });
+      return;
+    }
+
+    host.setAttribute('data-v157-menu-signature', signature);
     host.innerHTML = '<div class="v122-modules-shell"><div class="v122-modules-head"><span class="v122-modules-title"><i class="fas fa-compass"></i> Módulos do sistema</span></div><div class="v122-modules-grid"></div></div>';
     var grid = host.querySelector('.v122-modules-grid');
-    modes().forEach(function(m){
+    list.forEach(function(m){
       var card = document.createElement('button');
       card.type = 'button';
       card.className = 'v122-module-card' + (m.id === current ? ' is-active' : '');
@@ -13431,9 +13524,14 @@
   function byId(id){ return document.getElementById(id); }
   function cloneOptions(from, to){
     if(!from || !to) return;
+    // V158: evita piscar no mobile. Não recria o select se nada mudou
+    // e nunca troca as opções enquanto o usuário estiver tocando/abrindo o seletor.
+    if(document.activeElement === to) return;
     var old = to.value;
-    to.innerHTML = from.innerHTML;
-    to.value = from.value || old;
+    var nextHTML = from.innerHTML || '';
+    if(to.innerHTML !== nextHTML) to.innerHTML = nextHTML;
+    var nextValue = from.value || old;
+    if(to.value !== nextValue) to.value = nextValue;
   }
   function ensureSelectors(){
     var hero = byId('v116-hero');
@@ -15508,13 +15606,14 @@
   }
 }
 </style>
-<script id="concenal-v155-chat-script">
+<script id="concenal-v156-chat-script">
 (function(){
   'use strict';
-  if(window.__CONCENAL_CHAT_V155_LOADED__) return;
-  window.__CONCENAL_CHAT_V155_LOADED__ = true;
+  if(window.__CONCENAL_CHAT_V156_LOADED__) return;
+  window.__CONCENAL_CHAT_V156_LOADED__ = true;
 
-  var CHAT_V153 = 'V155_CHAT_REALTIME_PRESENCE_FAST_AUDIO_FIX';
+  var CHAT_V156 = 'V156_CHAT_PRESENCE_FIX_SELECTED_DOM';
+  var CHAT_V153 = CHAT_V156;
   var SESSION_MS = 5 * 60 * 1000;
   var SESSION_KEYS = ['concenal_v29_session','concenal_v149_session','concenal_session','concenal_user_session'];
   var runtimeLogged = false;
@@ -15579,25 +15678,80 @@
   function installSessionNoAutoLogin(){ clearStoredSessions(); window.saveSession=function(userObj){ runtimeLogged=true; clearStoredSessions(); resetInactivityTimer(); markPresence(true,true); return null; }; window.getSession=function(){ return null; }; window.clearSession=function(){ clearStoredSessions(); runtimeLogged=false; clearTimeout(inactivityTimer); }; window.checkLocalSession=function(){ if(runtimeLogged && current()){ try{ if(typeof showApp==='function') showApp(); }catch(e){} resetInactivityTimer(); markPresence(true,true); } else { showLogin(); } }; window.logout=function(){ markOffline(); showLogin('Você saiu do sistema. Faça login novamente.'); }; ['click','keydown','mousemove','touchstart','scroll'].forEach(function(ev){ document.addEventListener(ev, resetInactivityTimer, {passive:true}); }); window.addEventListener('beforeunload', clearStoredSessions); }
 
   function captureSelected(id,name,roleDesc,type,rawUser,route){ type=type || (id==='global'?'global':(id==='parent_home'?'parent_home':(/dire|coord/i.test(txt(roleDesc)) || id==='direcao' || id==='direcao_grupo' ? 'direction' : 'user'))); selected={id:txt(id||'global'),name:txt(name||id||''),roleDesc:txt(roleDesc||''),type:type,user:rawUser||null,route:route||null,routeId:route?routeId(route):''}; if(type==='route' && !selected.routeId) selected.routeId=txt(id).replace(/^route_/i,''); return selected; }
-  function captureSelectedFromDom(){ if(selected) return selected; var active=document.querySelector('#chat-user-list .chat-v103-user.active'); if(active){ captureSelected(active.getAttribute('data-chat-id')||'global', active.getAttribute('data-name')||'', '', active.getAttribute('data-chat-type')||'user', null, null); selected.routeId=active.getAttribute('data-route-id') || selected.routeId || selected.id.replace(/^route_/i,''); return selected; } var title=txt(($('chat-recipient-info')||{}).textContent||''); if(title) return captureSelected('global', title, '', 'global', null, null); return null; }
+  function captureSelectedFromDom(){
+    var active=document.querySelector('#chat-user-list .chat-v103-user.active');
+    if(active){
+      var id=active.getAttribute('data-chat-id')||'global';
+      var type=active.getAttribute('data-chat-type')||'user';
+      var routeIdAttr=active.getAttribute('data-route-id')||'';
+      /* A seleção precisa vir SEMPRE do item ativo da tela. Antes a variável selected ficava presa
+         no primeiro chat aberto e o online/visto por último continuava lendo a conversa errada. */
+      captureSelected(id, active.getAttribute('data-name')||'', active.getAttribute('data-role')||'', type, null, null);
+      selected.routeId = routeIdAttr || selected.routeId || selected.id.replace(/^route_/i,'');
+      if(type==='route' && selected.routeId){
+        selected.route=(routesCache||[]).find(function(r){ return norm(routeId(r))===norm(selected.routeId); }) || selected.route;
+      }
+      if(type==='user'){
+        selected.user=bestLiveUserFromAliases([id, active.getAttribute('data-name')||'']) || selected.user;
+      }
+      return selected;
+    }
+    var title=txt(($('chat-recipient-info')||{}).textContent||'');
+    if(title && (!selected || selected.type==='global')) return captureSelected('global', title, '', 'global', null, null);
+    return selected || null;
+  }
   function conversationKey(){ var s=captureSelectedFromDom(); if(!s) return 'global'; if(s.type==='global' || s.id==='global') return 'global'; if(s.type==='route') return 'route__'+safe(s.routeId || routeId(s.route) || s.id.replace(/^route_/i,'')); if(s.type==='direction' || s.type==='parent_home' || s.id==='direcao' || s.id==='direcao_grupo') return directKey(meId(),'direcao'); return directKey(meId(), s.id); }
-  function liveUserFromAliases(a){ var aliases=uniq(a); var found=(usersCache||[]).find(function(u){ return intersects(aliasesUser(u).concat([u.__docId,u.docId,u.firestoreId]), aliases); }); return found || null; }
-  function liveUser(u){ if(!u) return null; return liveUserFromAliases(aliasesUser(u).concat([u.id,u.__docId,u.docId,u.firestoreId,u.name,u.displayName,u.email,u.username])); }
+  function bestLiveUserFromAliases(a){
+    var aliases=uniq(a);
+    var list=(usersCache||[]).filter(function(u){ return intersects(aliasesUser(u).concat([u.__docId,u.docId,u.firestoreId]), aliases); });
+    if(!list.length) return null;
+    list.sort(function(a,b){ return latestSeen(b)-latestSeen(a); });
+    return list[0];
+  }
+  function liveUserFromAliases(a){ return bestLiveUserFromAliases(a); }
+  function liveUser(u){ if(!u) return null; return bestLiveUserFromAliases(aliasesUser(u).concat([u.id,u.__docId,u.docId,u.firestoreId,u.name,u.displayName,u.email,u.username])); }
   function liveDirectionUsers(){ return (usersCache||[]).filter(isDirection); }
-  function selectedRecipientUsers(){ var s=captureSelectedFromDom(); if(!s || s.type==='global') return []; if(s.type==='direction' || s.type==='parent_home') return liveDirectionUsers().filter(function(u){ return !intersects(aliasesUser(u),meAliases()); }); if(s.type==='route'){ var r=s.route; if(!r && s.routeId) r=(routesCache||[]).find(function(x){ return norm(routeId(x))===norm(s.routeId); }); if(r){ var p=liveUserFromAliases(routeParentAliases(r)); var a=liveUserFromAliases(routeAssignedAliases(r)); return [p,a].filter(function(u){ return u && !intersects(aliasesUser(u),meAliases()); }); } return []; } var u=liveUser(s.user) || liveUserFromAliases([s.id,s.name]); return u && !intersects(aliasesUser(u),meAliases()) ? [u] : []; }
+  function selectedRecipientUsers(){
+    var s=captureSelectedFromDom(); if(!s || s.type==='global') return [];
+    if(s.type==='direction' || s.type==='parent_home') return liveDirectionUsers().filter(function(u){ return !intersects(aliasesUser(u),meAliases()); });
+    if(s.type==='route'){
+      var r=s.route; if(!r && s.routeId) r=(routesCache||[]).find(function(x){ return norm(routeId(x))===norm(s.routeId); });
+      if(r){ var p=bestLiveUserFromAliases(routeParentAliases(r)); var a=bestLiveUserFromAliases(routeAssignedAliases(r)); return [p,a].filter(function(u){ return u && !intersects(aliasesUser(u),meAliases()); }); }
+      return [];
+    }
+    var u=liveUser(s.user) || bestLiveUserFromAliases([s.id,s.name]);
+    /* Fallback: se ainda não houve snapshot atualizado, usa os atributos da própria seleção.
+       Assim nunca fica preso em “sem registro de online” por falta de mapeamento. */
+    if(!u && (s.id || s.name)) u={id:s.id,name:s.name,displayName:s.name,role:s.roleDesc};
+    return u && !intersects(aliasesUser(u),meAliases()) ? [u] : [];
+  }
 
   function tsMillis(v){ if(!v) return 0; if(typeof v==='number') return v < 10000000000 ? v*1000 : v; if(v instanceof Date) return v.getTime(); if(typeof v==='string'){ var n=Number(v); if(n) return n < 10000000000 ? n*1000 : n; var d=Date.parse(v); return isNaN(d)?0:d; } if(typeof v==='object'){ try{ if(typeof v.toMillis==='function') return v.toMillis(); }catch(e){} if(v.seconds) return Number(v.seconds)*1000 + Math.floor(Number(v.nanoseconds||0)/1000000); if(v._seconds) return Number(v._seconds)*1000 + Math.floor(Number(v._nanoseconds||0)/1000000); } return 0; }
+  function msgFromAliasesV156(m){ m=m||{}; return uniq([m.fromAliases,m.senderAliases,m.from,m.fromId,m.senderId,m.fromName,m.senderName,m.authorName,m.fromEmail,m.fromUsername]); }
   function latestSeen(u){ u=u||{}; return Math.max(tsMillis(u.presenceAt), tsMillis(u.lastSeenAt), tsMillis(u.lastOnlineAt), tsMillis(u.onlineAt), tsMillis(u.updatedAt)); }
-  function isOnline(u){ var ts=latestSeen(u), st=norm((u||{}).presenceState || (u||{}).status || ''); var flag=((u||{}).online===true || (u||{}).isOnline===true || st==='online' || st==='ativo'); return !!(u && flag && ts && now()-ts < 16000); }
-  function fmtClock(ts){ var d=new Date(tsMillis(ts)||0); return d.toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'}); }
-  function formatSeen(ts){ ts=tsMillis(ts); if(!ts) return 'sem registro de online'; var d=new Date(ts), today=new Date(); if(d.toDateString()===today.toDateString()) return 'visto por último hoje às '+fmtClock(ts); return 'visto por último em '+d.toLocaleDateString('pt-BR')+' às '+fmtClock(ts); }
+  function lastChatActivityForUser(u){
+    var aliases=aliasesUser(u), best=0;
+    try{
+      var msgs=(typeof allChatMessagesMaster!=='undefined' && Array.isArray(allChatMessagesMaster)) ? allChatMessagesMaster : [];
+      msgs.forEach(function(m){
+        if(intersects(msgFromAliasesV156(m), aliases) || intersects([m.from,m.fromId,m.senderId,m.to,m.toId,m.toName], aliases)){
+          best=Math.max(best, tsMillis(m.timestamp)||tsMillis(m.createdAt)||tsMillis(m.time)||0);
+        }
+      });
+    }catch(e){}
+    return best;
+  }
+  function effectiveSeen(u){ return Math.max(latestSeen(u), lastChatActivityForUser(u)); }
+  function isOnline(u){ var ts=latestSeen(u), st=norm((u||{}).presenceState || (u||{}).status || ''); if(st==='offline' || st==='desconectado' || st==='saiu') return false; return !!(u && ts && now()-ts < 13000); }
+  function fmtClock(ts){ var d=new Date(tsMillis(ts)||now()); return d.toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'}); }
+  function formatSeen(ts){ ts=tsMillis(ts); if(!ts) return 'visto por último não registrado ainda'; var d=new Date(ts), today=new Date(); if(d.toDateString()===today.toDateString()) return 'visto por último hoje às '+fmtClock(ts); return 'visto por último em '+d.toLocaleDateString('pt-BR')+' às '+fmtClock(ts); }
   function formatOnline(ts){ ts=tsMillis(ts)||now(); var d=new Date(ts), today=new Date(); return 'online agora • '+(d.toDateString()===today.toDateString()?'hoje às '+fmtClock(ts):d.toLocaleDateString('pt-BR')+' às '+fmtClock(ts)); }
-  function ensurePresenceUi(){ var sub=$('chat-recipient-role'); if(!sub) return null; var old1=$('chat-v151-presence-line'); if(old1) old1.remove(); var old2=$('chat-v152-presence-line'); if(old2) old2.remove(); var line=$('chat-v153-presence-line'); if(!line){ line=document.createElement('div'); line.id='chat-v153-presence-line'; line.innerHTML='<span id="chat-v153-presence-dot" class="chat-v153-dot"></span><span id="chat-v153-presence-text">sem registro de online</span>'; sub.insertAdjacentElement('afterend', line); } var composer=document.querySelector('.chat-v103-composer') || ($('chat-input')?$('chat-input').parentElement:null); if(composer && !$('chat-v153-typing-line')){ var typing=document.createElement('div'); typing.id='chat-v153-typing-line'; typing.innerHTML='<i class="fas fa-ellipsis"></i><span id="chat-v153-typing-text"></span>'; composer.parentElement.insertBefore(typing, composer); } return line; }
-  function updatePresenceUi(){ ensurePresenceUi(); var dot=$('chat-v153-presence-dot'), label=$('chat-v153-presence-text'), typing=$('chat-v153-typing-line'), typingText=$('chat-v153-typing-text'); var conv=conversationKey(); var typingUser=(usersCache||[]).find(function(u){ if(intersects(aliasesUser(u),meAliases())) return false; return !!u.chatTypingActiveV153 && norm(u.chatTypingConversationV153)===norm(conv) && tsMillis(u.chatTypingAtV153) && now()-tsMillis(u.chatTypingAtV153)<3200; }); if(typingUser){ if(typingText) typingText.textContent=userName(typingUser)+' está digitando...'; if(typing) typing.classList.add('active'); } else { if(typingText) typingText.textContent=''; if(typing) typing.classList.remove('active'); } var users=selectedRecipientUsers(); if(!users.length){ if(dot) dot.className='chat-v153-dot'; if(label) label.textContent='sem registro de online'; return; } var online=users.filter(isOnline); if(online.length){ if(dot) dot.className='chat-v153-dot online'; if(label) label.textContent=(online.length>1 ? online.length+' pessoas online agora' : formatOnline(latestSeen(online[0]))); } else { var latest=users.slice().sort(function(a,b){ return latestSeen(b)-latestSeen(a); })[0]; if(dot) dot.className='chat-v153-dot'; if(label) label.textContent=formatSeen(latestSeen(latest)); } }
+  function ensurePresenceUi(){ var sub=$('chat-recipient-role'); if(!sub) return null; var old1=$('chat-v151-presence-line'); if(old1) old1.remove(); var old2=$('chat-v152-presence-line'); if(old2) old2.remove(); var line=$('chat-v153-presence-line'); if(!line){ line=document.createElement('div'); line.id='chat-v153-presence-line'; line.innerHTML='<span id="chat-v153-presence-dot" class="chat-v153-dot"></span><span id="chat-v153-presence-text">carregando presença...</span>'; sub.insertAdjacentElement('afterend', line); } var composer=document.querySelector('.chat-v103-composer') || ($('chat-input')?$('chat-input').parentElement:null); if(composer && !$('chat-v153-typing-line')){ var typing=document.createElement('div'); typing.id='chat-v153-typing-line'; typing.innerHTML='<i class="fas fa-ellipsis"></i><span id="chat-v153-typing-text"></span>'; composer.parentElement.insertBefore(typing, composer); } return line; }
+  function updatePresenceUi(){ ensurePresenceUi(); var dot=$('chat-v153-presence-dot'), label=$('chat-v153-presence-text'), typing=$('chat-v153-typing-line'), typingText=$('chat-v153-typing-text'); var conv=conversationKey(); var typingUser=(usersCache||[]).find(function(u){ if(intersects(aliasesUser(u),meAliases())) return false; return !!u.chatTypingActiveV153 && norm(u.chatTypingConversationV153)===norm(conv) && tsMillis(u.chatTypingAtV153) && now()-tsMillis(u.chatTypingAtV153)<3200; }); if(typingUser){ if(typingText) typingText.textContent=userName(typingUser)+' está digitando...'; if(typing) typing.classList.add('active'); } else { if(typingText) typingText.textContent=''; if(typing) typing.classList.remove('active'); } var users=selectedRecipientUsers(); if(!users.length){ if(dot) dot.className='chat-v153-dot'; if(label) label.textContent='visto por último não registrado ainda'; return; } var online=users.filter(isOnline); if(online.length){ if(dot) dot.className='chat-v153-dot online'; if(label) label.textContent=(online.length>1 ? online.length+' pessoas online agora' : formatOnline(latestSeen(online[0]))); } else { var latest=users.slice().sort(function(a,b){ return effectiveSeen(b)-effectiveSeen(a); })[0]; if(dot) dot.className='chat-v153-dot'; if(label) label.textContent=formatSeen(effectiveSeen(latest)); } }
   function currentUserDocId(){ var live=liveUserFromAliases(meAliases()); var u=current()||{}; return txt((live && (live.__docId || live.docId || live.firestoreId)) || u.__docId || u.docId || u.firestoreId || u.firebaseDocId || u.id || meId()); }
-  function markPresence(online, force){ if(!current()) return; if(online && !force && now()-lastPresenceWrite<4000) return; lastPresenceWrite=now(); try{ var col=getCol('concenal_users'); if(!col) return; var t=now(); var data={online:!!online,isOnline:!!online,presenceState:online?'online':'offline',presenceAt:t,lastSeenAt:t,lastOnlineAt:t,chatOpen:!!(!$('modal-chat') || !$('modal-chat').classList.contains('hidden')),chatConversationOpen:conversationKey(),updatedAt:t}; if(!online){ data.chatTypingActiveV153=false; data.chatTypingAtV153=t; } col.doc(currentUserDocId()).set(data,{merge:true}).catch(function(){}); }catch(e){} }
+  function markPresence(online, force){ if(!current()) return; if(online && !force && now()-lastPresenceWrite<2200) return; lastPresenceWrite=now(); try{ var col=getCol('concenal_users'); if(!col) return; var t=now(); var data={online:!!online,isOnline:!!online,presenceState:online?'online':'offline',presenceAt:t,lastSeenAt:t,lastOnlineAt:t,chatOpen:!!(!$('modal-chat') || !$('modal-chat').classList.contains('hidden')),chatConversationOpen:conversationKey(),updatedAt:t,id:meId(),name:meName(),displayName:meName()}; if(!online){ data.chatTypingActiveV153=false; data.chatTypingAtV153=t; } col.doc(currentUserDocId()).set(data,{merge:true}).catch(function(){}); }catch(e){} }
   function markOffline(){ sendTyping(false,true); markPresence(false,true); }
-  function sendTyping(active, force){ clearTimeout(typingTimer); if(!current()) return; var apply=function(){ try{ var col=getCol('concenal_users'); if(!col) return; var t=now(); col.doc(currentUserDocId()).set({chatTypingActiveV153:!!active,chatTypingConversationV153:conversationKey(),chatTypingAtV153:t,online:true,isOnline:true,presenceState:'online',presenceAt:t,lastSeenAt:t,lastOnlineAt:t,updatedAt:t},{merge:true}).catch(function(){}); }catch(e){} }; clearTimeout(typingThrottle); if(active && !force) typingThrottle=setTimeout(apply,80); else apply(); if(active) typingTimer=setTimeout(function(){ sendTyping(false,true); },1800); }
+  function sendTyping(active, force){ clearTimeout(typingTimer); if(!current()) return; var apply=function(){ try{ var col=getCol('concenal_users'); if(!col) return; var t=now(); col.doc(currentUserDocId()).set({chatTypingActiveV153:!!active,chatTypingConversationV153:conversationKey(),chatTypingAtV153:t,online:true,isOnline:true,presenceState:'online',presenceAt:t,lastSeenAt:t,lastOnlineAt:t,updatedAt:t,id:meId(),name:meName(),displayName:meName()},{merge:true}).catch(function(){}); }catch(e){} }; clearTimeout(typingThrottle); if(active && !force) typingThrottle=setTimeout(apply,80); else apply(); if(active) typingTimer=setTimeout(function(){ sendTyping(false,true); },1800); }
   function subscribePresence(){ if(!usersUnsub){ try{ var c=getCol('concenal_users'); if(c) usersUnsub=c.onSnapshot(function(snap){ var list=[]; snap.forEach(function(doc){ var d=doc.data()||{}; list.push(Object.assign({}, d, {id:(d.id||doc.id), __docId:doc.id})); }); usersCache=list; updatePresenceUi(); }, function(err){ console.warn('Presença online indisponível:', err); }); }catch(e){} } if(!routesUnsub){ try{ var r=getCol('concenal_chat_routes'); if(r) routesUnsub=r.onSnapshot(function(snap){ var list=[]; snap.forEach(function(doc){ var d=doc.data()||{}; list.push(Object.assign({}, d, {id:(d.id||doc.id), routeId:(d.routeId||doc.id), __docId:doc.id})); }); routesCache=list; updatePresenceUi(); }, function(){}); }catch(e){} } }
 
   function formatDuration(ms){ var total=Math.max(0,Math.floor(ms/1000)); return String(Math.floor(total/60)).padStart(2,'0')+':'+String(total%60).padStart(2,'0'); }
@@ -15628,7 +15782,7 @@
     if(typeof window.loadChatUsers==='function' && !window.loadChatUsers.__v153Wrapped){ originalLoadChatUsers=window.loadChatUsers; window.loadChatUsers=markPatched(async function(){ var out=await originalLoadChatUsers.apply(this,arguments); ensureChatUi(); updatePresenceUi(); return out; }); }
     if(typeof window.clearChatAttachment==='function' && !window.clearChatAttachment.__v153Wrapped){ originalClearChatAttachment=window.clearChatAttachment; window.clearChatAttachment=markPatched(function(){ var out=originalClearChatAttachment.apply(this,arguments); clearAudioUiOnly(); return out; }); }
   }
-  function boot(){ installSessionNoAutoLogin(); installWrappers(); ensureChatUi(); subscribePresence(); updatePresenceUi(); if(!presenceTimer) presenceTimer=setInterval(function(){ if(current()){ markPresence(true,false); updatePresenceUi(); } },4000); }
+  function boot(){ installSessionNoAutoLogin(); installWrappers(); ensureChatUi(); subscribePresence(); updatePresenceUi(); if(!presenceTimer) presenceTimer=setInterval(function(){ if(current()){ markPresence(true,false); updatePresenceUi(); } },2500); }
 
   window.addEventListener('beforeunload',function(){ markOffline(); clearStoredSessions(); });
   document.addEventListener('visibilitychange',function(){ if(document.hidden) markOffline(); else { markPresence(true,true); updatePresenceUi(); } });
@@ -15638,6 +15792,69 @@
   document.addEventListener('DOMContentLoaded',function(){ setTimeout(boot,80); setTimeout(boot,700); });
   setTimeout(boot,1500);
   console.log('CONCENAL Chat carregado:', CHAT_V153);
+})();
+</script>
+
+
+
+<script id="concenal-v159-chat-privacy-guard">
+(function(){
+  if(window.__CONCENAL_CHAT_PRIVACY_GUARD_V159__) return;
+  window.__CONCENAL_CHAT_PRIVACY_GUARD_V159__ = true;
+  function txt(v){ return v == null ? '' : String(v); }
+  function norm(v){ return txt(v).normalize('NFD').replace(/[\u0300-\u036f]/g,'').trim().toLowerCase(); }
+  function uniq(arr){ var out=[]; (Array.isArray(arr)?arr:[arr]).flat(Infinity).forEach(function(v){ if(v==null) return; var s=txt(v); if(s && !out.some(function(x){return norm(x)===norm(s);})){ out.push(s); } }); return out; }
+  function intersects(a,b){ var A=uniq(a).map(norm).filter(Boolean), B=uniq(b).map(norm).filter(Boolean); return A.some(function(x){ return B.indexOf(x)>=0; }); }
+  function directKey(a,b){ return [norm(a),norm(b)].sort().join('__'); }
+  function me(){ try{return window.currentUser || currentUser || {};}catch(e){return {};}}
+  function meId(){ var u=me(); return txt(u.id||u.uid||u.userId||u.authUid||u.email||u.username||u.name); }
+  function meAliases(){ var u=me(); return uniq([u.aliases,u.participants,u.id,u.uid,u.userId,u.authUid,u.email,u.username,u.login,u.name,u.displayName,u.fullName,u.nome,meId()]); }
+  function role(u){ return norm(u && (u.role||u.perfil||u.type||u.tipo||u.accessMode||u.accessLevel||'')); }
+  function isTeacher(){ return /teacher|professor|docente/.test(role(me())); }
+  function directionAliases(){ return uniq(['direcao','direção','direcao_grupo','direção geral','direcao geral','direção / coordenação','direcao / coordenacao','coordenação','coordenacao','coord','admin','atendimento oficial']); }
+  function msgFrom(m){ return uniq([m&&m.fromAliases,m&&m.from,m&&m.fromId,m&&m.fromUid,m&&m.senderId,m&&m.createdBy,m&&m.fromEmail,m&&m.fromUsername,m&&m.fromName,m&&m.senderName,m&&m.authorName,m&&m.createdByName]); }
+  function msgTo(m){ return uniq([m&&m.toAliases,m&&m.to,m&&m.toId,m&&m.toUid,m&&m.recipientId,m&&m.receiverId,m&&m.targetId,m&&m.destinatarioId,m&&m.toEmail,m&&m.recipientEmail,m&&m.toUsername,m&&m.toName,m&&m.recipientName,m&&m.targetName]); }
+  function msgParts(m){ return uniq([m&&m.participants,m&&m.participantIds,m&&m.users,m&&m.members]); }
+  function isDirectionSelected(){
+    var active=document.querySelector('.chat-v103-user.active');
+    var type=active && active.getAttribute('data-chat-type');
+    var id=active && active.getAttribute('data-chat-id');
+    var title=document.getElementById('chat-recipient-info');
+    return norm(type)==='direction' || norm(id)==='direcao_grupo' || /dire(c|ç)ão\s*\/\s*coordena(c|ç)ão|atendimento oficial/.test(norm(title && title.textContent));
+  }
+  function isAllowedDirectionMessage(m){
+    if(!m) return false;
+    if(norm(m.to)==='global' || norm(m.chatType)==='global' || norm(m.conversationKey)==='global') return false;
+    if(m.routeId || norm(m.chatType)==='route' || /^route__/i.test(txt(m.conversationKey||''))) return false;
+    var myA=meAliases(), dirA=directionAliases(), fromA=msgFrom(m), rawToA=msgTo(m), partA=msgParts(m);
+    var conv=norm(m.conversationKey||m.conversaKey||m.threadKey||'');
+    if(conv){
+      var allowed=false;
+      myA.forEach(function(a){ dirA.forEach(function(d){ if(conv===directKey(a,d)) allowed=true; }); });
+      return allowed;
+    }
+    var parentContext=!!(m.ticketParentId||m.routeParentId||m.parentId||m.responsavelId||m.responsavel||m.parentName||m.parentEmail||/respons/.test(norm(m.toRole))||/respons/.test(norm(m.fromRole)));
+    if(intersects(fromA,myA) && intersects(rawToA,dirA)) return true;
+    if(intersects(fromA,dirA) && intersects(rawToA,myA)) return true;
+    return !parentContext && intersects(partA,myA) && intersects(partA,dirA);
+  }
+  function install(){
+    if(typeof window.renderChatMessages!=='function' || window.renderChatMessages.__v159PrivacyWrapped) return;
+    var previous=window.renderChatMessages;
+    window.renderChatMessages=function(allMessages){
+      var list=allMessages;
+      try{
+        if(isTeacher() && isDirectionSelected() && Array.isArray(allMessages)){
+          list=allMessages.filter(isAllowedDirectionMessage);
+        }
+      }catch(e){ console.warn('Privacidade do chat V159:', e); }
+      return previous.call(this,list);
+    };
+    window.renderChatMessages.__v159PrivacyWrapped=true;
+  }
+  install();
+  document.addEventListener('DOMContentLoaded',function(){ setTimeout(install,100); setTimeout(install,800); });
+  setTimeout(install,1500);
 })();
 </script>
 
