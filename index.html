@@ -144,6 +144,28 @@
   }
 }
 </style>
+
+<style id="concenal-v158-mobile-menu-stability">
+  /* Corrige o efeito de piscar sem alterar módulos, notas, relatórios ou dashboard. */
+  #v116-hero[data-v158-stable="true"],
+  #v116-hero[data-v158-stable="true"] *{
+    animation-duration:0s!important;
+    animation-delay:0s!important;
+  }
+  #v116-hero,
+  #v123-panel-selectors,
+  #v122-modules-center{
+    backface-visibility:hidden;
+    transform:translateZ(0);
+  }
+  @media(max-width:900px){
+    #v116-hero{contain:layout paint;}
+    #v123-panel-selectors select{
+      transition:none!important;
+    }
+  }
+</style>
+
 </head>
 <body class="text-gray-800 min-h-screen flex flex-col bg-gray-50 overflow-x-hidden">
 
@@ -1329,9 +1351,9 @@
 
         function getAccessLabel(user = currentUser) {
             if(!user) return '';
-            if(user.accessMode === 'developer') return 'Professor Desenvolvedor';
             if(user.accessMode === 'demo' || user.role === 'demo') return 'Demonstração';
-            const labels = { admin: 'Administrador', coord: 'Coordenação', teacher: 'Professor', parent: 'Responsável' };
+            if(user.accessMode === 'developer' && (user.role === 'teacher' || user.role === 'professor')) return 'Professor Desenvolvedor';
+            const labels = { admin: 'Administrador', coord: 'Coordenação', teacher: (user.accessMode === 'developer' ? 'Professor Desenvolvedor' : 'Professor'), parent: 'Responsável' };
             return labels[user.role] || 'Usuário';
         }
 
@@ -2503,6 +2525,7 @@
                 const pInput = document.getElementById('password');
                 const errEl = document.getElementById('login-error');
                 const errMsgText = document.getElementById('error-msg-text');
+                const btnLogin = document.getElementById('btn-login');
                 
                 if(!uInput || !pInput || !errEl) return;
                 
@@ -2511,6 +2534,11 @@
                 errEl.classList.add('hidden');
 
                 try {
+                    if(btnLogin) {
+                        btnLogin.disabled = true;
+                        btnLogin.classList.add('opacity-70', 'cursor-wait');
+                    }
+
                     let foundUser = null;
 
                     // Login de emergência do administrador: entra mesmo se o Firebase demorar, falhar
@@ -2554,6 +2582,11 @@
                     console.error(error);
                     if(errMsgText) errMsgText.innerText = error.message || 'Erro ao entrar no sistema.';
                     errEl.classList.remove('hidden');
+                } finally {
+                    if(btnLogin) {
+                        btnLogin.disabled = false;
+                        btnLogin.classList.remove('opacity-70', 'cursor-wait');
+                    }
                 }
             });
         }
@@ -2673,20 +2706,56 @@
 
             if (currentUser.id === 'admin_master') {
                  loadParentSubjectsAndPopulate();
-                 if(!isParent) loadChatUsers();
+                 // V156: não carregar lista do chat no login; carrega somente ao abrir o chat.
+                 // Isso evita travamento no login do professor.
+                 // if(!isParent) loadChatUsers();
                  startRealtimeSync();
             } else {
                  if (userProfileUnsubscribe) userProfileUnsubscribe();
+                 let lastProfileConfigHash = '';
                  userProfileUnsubscribe = getCollection('concenal_users').doc(currentUser.id).onSnapshot(doc => {
                      if (doc.exists) {
-                         currentUser = { id: doc.id, ...doc.data() };
-                         saveSession(currentUser);
-                         loadParentSubjectsAndPopulate();
+                         const previousClass = appData.currentClass;
+                         const previousSubject = appData.currentSubject;
+                         const incomingUser = { id: doc.id, ...doc.data() };
+
+                         // V155: evita loop/travamento no login do professor.
+                         // O listener do perfil também recebe atualizações de presença online
+                         // gravadas no próprio documento do usuário. Antes, cada presença chamava
+                         // saveSession() + loadParentSubjectsAndPopulate(), que podia redesenhar a tela
+                         // a cada poucos segundos e deixar os botões/campos travados.
+                         const configHash = JSON.stringify({
+                             role: incomingUser.role,
+                             accessMode: incomingUser.accessMode,
+                             permissions: incomingUser.permissions || [],
+                             assignments: incomingUser.assignments || {},
+                             subjects: incomingUser.subjects || [],
+                             classes: incomingUser.classes || [],
+                             studentId: incomingUser.studentId || '',
+                             studentIds: incomingUser.studentIds || [],
+                             displayName: incomingUser.displayName || incomingUser.name || incomingUser.username || '',
+                             avatarUrl: incomingUser.avatarUrl || incomingUser.avatar || ''
+                         });
+
+                         currentUser = incomingUser;
+                         try { window.__concenalRuntimeUser = currentUser; } catch(e) {}
+                         // V156: não salvar sessão dentro do listener do perfil para evitar ciclos de presença/sessão.
+                         try { window.__concenalRuntimeUser = currentUser; } catch(e) {}
+
+                         if (configHash !== lastProfileConfigHash) {
+                             lastProfileConfigHash = configHash;
+                             loadParentSubjectsAndPopulate();
+                             if(previousClass) appData.currentClass = previousClass;
+                             if(previousSubject) appData.currentSubject = previousSubject;
+                             try { updateUI(); } catch(e) {}
+                         }
                      } else {
                          logout();
                      }
                  });
-                 if(!isParent) loadChatUsers();
+                 // V156: não carregar lista do chat no login; carrega somente ao abrir o chat.
+                 // Isso evita travamento no login do professor.
+                 // if(!isParent) loadChatUsers();
                  startRealtimeSync();
             }
         }
@@ -2743,7 +2812,18 @@
 
         function startRealtimeSync() {
             const loadingOverlay = document.getElementById('loading-overlay');
-            if(loadingOverlay) loadingOverlay.classList.remove('hidden');
+            const syncBootToken = Date.now();
+            appData._syncBootToken = syncBootToken;
+            if(loadingOverlay) {
+                loadingOverlay.classList.remove('hidden');
+                clearTimeout(window.__concenalLoadingFailsafe);
+                window.__concenalLoadingFailsafe = setTimeout(() => {
+                    if(appData._syncBootToken === syncBootToken) {
+                        loadingOverlay.classList.add('hidden');
+                        console.warn('Carregamento demorou demais; overlay removido para não travar as funções.');
+                    }
+                }, 5000);
+            }
             
             if (unsubscribe) unsubscribe();
             unsubscribe = getCollection('concenal_students').onSnapshot(snap => {
@@ -2771,10 +2851,13 @@
                     updateUI();
                 }
                 
+                clearTimeout(window.__concenalLoadingFailsafe);
                 if(loadingOverlay) loadingOverlay.classList.add('hidden');
             }, error => {
                 console.error("Firestore sync error:", error);
+                clearTimeout(window.__concenalLoadingFailsafe);
                 if(loadingOverlay) loadingOverlay.classList.add('hidden');
+                alert('Erro ao carregar dados do sistema. Verifique as regras do Firebase/Firestore e tente entrar novamente.');
             });
 
             if (activitiesUnsubscribe) activitiesUnsubscribe();
@@ -2787,55 +2870,10 @@
 
             listenForNotifications();
 
-            if (chatUnsubscribe) chatUnsubscribe();
-            chatUnsubscribe = getCollection('concenal_chat').onSnapshot(snap => {
-                let messages = [];
-                let newMessagesArrived = false;
-
-                snap.forEach(doc => {
-                    const m = doc.data();
-                    const docId = doc.id;
-                    messages.push({ docId, ...m });
-                    
-                    if (!isFirstChatLoad && !knownMessages.has(docId)) {
-                        const iAmParent = currentUser?.role === 'parent';
-                        const iAmAdmin = currentUser?.role === 'admin' || currentUser?.role === 'coord';
-
-                        const isForMe = (m.to === currentUser?.id) || 
-                                        (m.to === 'global' && !iAmParent) || 
-                                        (m.to === 'direcao' && iAmAdmin);
-                                        
-                        const isFromMe = m.from === currentUser?.id;
-                        
-                        if (isForMe && !isFromMe && !window.CONCENAL_CHAT_MODERN_ACTIVE) {
-                            newMessagesArrived = true;
-                            let senderId = m.from;
-                            if (m.to === 'global') senderId = 'global';
-                            
-                            const modalChat = document.getElementById('modal-chat');
-                            const isChatModalOpen = modalChat ? !modalChat.classList.contains('hidden') : false;
-                            
-                            if (!isChatModalOpen || chatRecipient !== senderId) {
-                                showToast(`Nova mensagem de ${m.fromName}`, m.text || "Anexo enviado");
-                                unreadCounts[senderId] = (unreadCounts[senderId] || 0) + 1;
-                                updateUnreadBadges();
-                            }
-                        }
-                    }
-                    knownMessages.add(docId);
-                });
-
-                if (newMessagesArrived) playSound();
-                isFirstChatLoad = false;
-
-                messages.sort((a, b) => a.timestamp - b.timestamp);
-                allChatMessagesMaster = messages.slice(-200); 
-
-                const modalChat = document.getElementById('modal-chat');
-                if(modalChat && !modalChat.classList.contains('hidden')) {
-                    renderChatMessages(allChatMessagesMaster);
-                }
-            });
+            // V156: o listener legado do chat foi removido do login.
+            // Ele carregava TODA a coleção de mensagens ao entrar e deixava o professor travado.
+            // O chat moderno inicia seu próprio listener apenas quando o botão Chat é aberto.
+            if (chatUnsubscribe) { try { chatUnsubscribe(); } catch(e) {} chatUnsubscribe = null; }
         }
         
         function renderChatMessages(allMessages) {
@@ -6654,9 +6692,9 @@
         window.CHAT_ROUTES_CACHE_V39 = routes;
         return routes;
     }
-    function directionUsers(users){ return users.filter(function(u){ return ['admin','coord'].includes(u.role) || u.accessMode === 'developer'; }); }
+    function directionUsers(users){ return users.filter(function(u){ return ['admin','coord','secretaria'].includes(u.role); }); }
     function staffUsers(users){ return users.filter(function(u){ return ['teacher','coord','admin','demo'].includes(u.role) || u.accessMode === 'developer'; }); }
-    function isDirection(){ return currentUser && (currentUser.role === 'admin' || currentUser.role === 'coord' || currentUser.accessMode === 'developer'); }
+    function isDirection(){ return currentUser && (currentUser.role === 'admin' || currentUser.role === 'coord' || currentUser.role === 'secretaria'); }
 
     window.openChat = async function(){
         const modalChat = byId('modal-chat'); if(modalChat) modalChat.classList.remove('hidden');
@@ -8113,31 +8151,8 @@
             return;
         }
         w.document.open();
-        w.document.write('<!doctype html><html><head><meta charset="UTF-8"><title>'+esc(title || 'Impressão')+'</title>'+css+'</head><body>'+html+'<script>setTimeout(function(){window.focus();window.print();},500);<\/script>
-<!-- PATCH V158: estabilização do painel inicial mobile do professor -->
-<!-- PATCH V159: privacidade rígida no chat professor ↔ direção, sem vazar mensagens direção ↔ responsável -->
-<style id="concenal-v158-mobile-menu-stability">
-  /* Corrige o efeito de piscar sem alterar módulos, notas, relatórios ou dashboard. */
-  #v116-hero[data-v158-stable="true"],
-  #v116-hero[data-v158-stable="true"] *{
-    animation-duration:0s!important;
-    animation-delay:0s!important;
-  }
-  #v116-hero,
-  #v123-panel-selectors,
-  #v122-modules-center{
-    backface-visibility:hidden;
-    transform:translateZ(0);
-  }
-  @media(max-width:900px){
-    #v116-hero{contain:layout paint;}
-    #v123-panel-selectors select{
-      transition:none!important;
-    }
-  }
-</style>
-
-</body></html>');
+        const closeScript = '</scr' + 'ipt>';
+        w.document.write('<!doctype html><html><head><meta charset="UTF-8"><title>'+esc(title || 'Impressão')+'</title>'+css+'</head><body>'+html+'<script>setTimeout(function(){window.focus();window.print();},500);' + closeScript + '</body></html>');
         w.document.close();
     }
     window.printBehaviorReport = async function(mass){
@@ -11007,8 +11022,8 @@
   function userId(u){ return txt((u||{}).id || (u||{}).uid || (u||{}).userId || (u||{}).authUid || (u||{}).email || (u||{}).username || (u||{}).name); }
   function meId(){ return userId(me()) || 'usuario_atual'; }
   function userName(u){ return txt((u||{}).displayName || (u||{}).name || (u||{}).fullName || (u||{}).username || (u||{}).email || userId(u) || 'Usuário'); }
-  function userRole(u){ return norm((u||{}).role || (u||{}).accessMode || (u||{}).tipo || ''); }
-  function isDirection(u){ const r = userRole(u); return ['admin','coord','coordenador','coordenacao','direcao','diretor','diretoria','developer'].includes(r); }
+  function userRole(u){ return norm((u||{}).role || (u||{}).tipo || (u||{}).accessMode || ''); }
+  function isDirection(u){ const r = userRole(u); return ['admin','coord','coordenador','coordenacao','direcao','diretor','diretoria','secretaria','secretario'].includes(r); }
   function isTeacher(u){ const r = userRole(u); return ['teacher','professor','docente'].includes(r); }
   function isParent(u){ const r = userRole(u); return ['parent','pai','mae','mãe','responsavel','responsavel legal','aluno'].includes(r); }
   function isStudentOnly(u){ const r = userRole(u); return ['student','estudante','aluno'].includes(r) && !isParent(u); }
@@ -12477,7 +12492,8 @@
   function userName(u){ return str(u && (u.displayName || u.name || u.fullName || u.username || u.email)) || 'Usuário'; }
   function roleLabel(u){
     try{ if(typeof getAccessLabel === 'function') return getAccessLabel(u); }catch(e){}
-    var role = str(u && (u.accessMode || u.role)).toLowerCase();
+    var role = str(u && (u.role || u.accessMode)).toLowerCase();
+    if((u && u.accessMode === 'developer') && (role === 'teacher' || role === 'professor')) return 'Professor Desenvolvedor';
     if(role === 'developer') return 'Professor Desenvolvedor';
     if(role === 'admin') return 'Direção Geral';
     if(role === 'coord') return 'Coordenação';
@@ -14391,7 +14407,7 @@
   function role(){ var u=user()||{}; return txt(u.role || '').toLowerCase(); }
   function mode(){ var u=user()||{}; return txt(u.accessMode || '').toLowerCase(); }
   function isParent(){ return role() === 'parent'; }
-  function isDirection(){ return role() === 'admin' || role() === 'coord' || mode() === 'developer'; }
+  function isDirection(){ return role() === 'admin' || role() === 'coord' || role() === 'secretaria'; }
   function isTeacher(){ return !isParent() && !isDirection(); }
   function safeCan(feature){ try{ return typeof window.canAccess === 'function' ? !!window.canAccess(feature) : true; }catch(e){ return true; } }
   function data(){ try{ return window.appData || appData || {}; }catch(e){ return window.appData || {}; } }
@@ -15658,7 +15674,7 @@
   function userId(u){ return txt(u && (u.id || u.uid || u.userId || u.authUid || u.email || u.username || u.name)); }
   function userName(u){ return txt(u && (u.displayName || u.name || u.fullName || u.nome || u.username || u.email || userId(u))); }
   function userRole(u){ return norm(u && (u.role || u.perfil || u.type || u.tipo || u.accessMode || u.accessLevel || '')); }
-  function isDirection(u){ return /admin|direcao|direção|diretor|diretoria|coord|coorden|secretaria|gestao|gestão|developer/.test(userRole(u)); }
+  function isDirection(u){ return /admin|direcao|direção|diretor|diretoria|coord|coorden|secretaria|gestao|gestão/.test(userRole(u)); }
   function isParent(u){ return /parent|respons|responsavel|responsável|pai|mae|mãe|famil|aluno/.test(userRole(u)); }
   function aliasesUser(u){ u=u||{}; var base=[u.aliases,u.participants,userId(u),u.uid,u.email,u.username,u.login,u.name,u.displayName,u.fullName,u.nome]; if(isDirection(u)) base.push(['direcao','direção','direcao_grupo','direção / coordenação','direcao / coordenacao','coordenação','coordenacao','coord','admin']); return uniq(base); }
   function directionUsers(){ return (usersCache||[]).filter(isDirection); }
@@ -15675,7 +15691,7 @@
   function clearStoredSessions(){ try{ SESSION_KEYS.forEach(function(k){ localStorage.removeItem(k); }); }catch(e){} try{ SESSION_KEYS.forEach(function(k){ sessionStorage.removeItem(k); }); }catch(e){} }
   function showLogin(message){ clearStoredSessions(); runtimeLogged=false; try{ currentUser=null; }catch(e){} var app=$('app-screen'); if(app) app.classList.add('hidden'); var login=$('login-screen'); if(login) login.classList.remove('hidden'); var modal=$('modal-chat'); if(modal) modal.classList.add('hidden'); document.body.classList.remove('chat-v153-open'); var overlay=$('loading-overlay'); if(overlay) overlay.classList.add('hidden'); if(message){ var err=$('login-error'), msg=$('error-msg-text'); if(err&&msg){ msg.textContent=message; err.classList.remove('hidden'); } } }
   function resetInactivityTimer(){ if(!runtimeLogged || !current()) return; clearTimeout(inactivityTimer); inactivityTimer=setTimeout(function(){ markOffline(); showLogin('Sessão encerrada após 5 minutos de inatividade. Faça login novamente.'); }, SESSION_MS); }
-  function installSessionNoAutoLogin(){ clearStoredSessions(); window.saveSession=function(userObj){ runtimeLogged=true; clearStoredSessions(); resetInactivityTimer(); markPresence(true,true); return null; }; window.getSession=function(){ return null; }; window.clearSession=function(){ clearStoredSessions(); runtimeLogged=false; clearTimeout(inactivityTimer); }; window.checkLocalSession=function(){ if(runtimeLogged && current()){ try{ if(typeof showApp==='function') showApp(); }catch(e){} resetInactivityTimer(); markPresence(true,true); } else { showLogin(); } }; window.logout=function(){ markOffline(); showLogin('Você saiu do sistema. Faça login novamente.'); }; ['click','keydown','mousemove','touchstart','scroll'].forEach(function(ev){ document.addEventListener(ev, resetInactivityTimer, {passive:true}); }); window.addEventListener('beforeunload', clearStoredSessions); }
+  function installSessionNoAutoLogin(){ clearStoredSessions(); window.saveSession=function(userObj){ runtimeLogged=true; try{ window.__concenalRuntimeUser = userObj || current(); }catch(e){} clearStoredSessions(); resetInactivityTimer(); return null; }; window.getSession=function(){ return null; }; window.clearSession=function(){ clearStoredSessions(); runtimeLogged=false; clearTimeout(inactivityTimer); }; window.checkLocalSession=function(){ if(runtimeLogged && current()){ try{ if(typeof showApp==='function') showApp(); }catch(e){} resetInactivityTimer(); markPresence(true,false); } else { showLogin(); } }; window.logout=function(){ markOffline(); showLogin('Você saiu do sistema. Faça login novamente.'); }; ['click','keydown','mousemove','touchstart','scroll'].forEach(function(ev){ document.addEventListener(ev, resetInactivityTimer, {passive:true}); }); window.addEventListener('beforeunload', clearStoredSessions); }
 
   function captureSelected(id,name,roleDesc,type,rawUser,route){ type=type || (id==='global'?'global':(id==='parent_home'?'parent_home':(/dire|coord/i.test(txt(roleDesc)) || id==='direcao' || id==='direcao_grupo' ? 'direction' : 'user'))); selected={id:txt(id||'global'),name:txt(name||id||''),roleDesc:txt(roleDesc||''),type:type,user:rawUser||null,route:route||null,routeId:route?routeId(route):''}; if(type==='route' && !selected.routeId) selected.routeId=txt(id).replace(/^route_/i,''); return selected; }
   function captureSelectedFromDom(){
@@ -15728,7 +15744,7 @@
 
   function tsMillis(v){ if(!v) return 0; if(typeof v==='number') return v < 10000000000 ? v*1000 : v; if(v instanceof Date) return v.getTime(); if(typeof v==='string'){ var n=Number(v); if(n) return n < 10000000000 ? n*1000 : n; var d=Date.parse(v); return isNaN(d)?0:d; } if(typeof v==='object'){ try{ if(typeof v.toMillis==='function') return v.toMillis(); }catch(e){} if(v.seconds) return Number(v.seconds)*1000 + Math.floor(Number(v.nanoseconds||0)/1000000); if(v._seconds) return Number(v._seconds)*1000 + Math.floor(Number(v._nanoseconds||0)/1000000); } return 0; }
   function msgFromAliasesV156(m){ m=m||{}; return uniq([m.fromAliases,m.senderAliases,m.from,m.fromId,m.senderId,m.fromName,m.senderName,m.authorName,m.fromEmail,m.fromUsername]); }
-  function latestSeen(u){ u=u||{}; return Math.max(tsMillis(u.presenceAt), tsMillis(u.lastSeenAt), tsMillis(u.lastOnlineAt), tsMillis(u.onlineAt), tsMillis(u.updatedAt)); }
+  function latestSeen(u){ u=u||{}; return Math.max(tsMillis(u.presenceAt), tsMillis(u.lastSeenAt), tsMillis(u.lastOnlineAt), tsMillis(u.onlineAt)); }
   function lastChatActivityForUser(u){
     var aliases=aliasesUser(u), best=0;
     try{
@@ -15742,16 +15758,16 @@
     return best;
   }
   function effectiveSeen(u){ return Math.max(latestSeen(u), lastChatActivityForUser(u)); }
-  function isOnline(u){ var ts=latestSeen(u), st=norm((u||{}).presenceState || (u||{}).status || ''); if(st==='offline' || st==='desconectado' || st==='saiu') return false; return !!(u && ts && now()-ts < 13000); }
+  function isOnline(u){ u=u||{}; var ts=Math.max(tsMillis(u.presenceAt), tsMillis(u.lastOnlineAt), tsMillis(u.onlineAt)); var st=norm(u.presenceState || u.status || ''); if(st==='offline' || st==='desconectado' || st==='saiu') return false; if(!(u.online===true || u.isOnline===true || st==='online')) return false; return !!(ts && now()-ts < 20000); }
   function fmtClock(ts){ var d=new Date(tsMillis(ts)||now()); return d.toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'}); }
   function formatSeen(ts){ ts=tsMillis(ts); if(!ts) return 'visto por último não registrado ainda'; var d=new Date(ts), today=new Date(); if(d.toDateString()===today.toDateString()) return 'visto por último hoje às '+fmtClock(ts); return 'visto por último em '+d.toLocaleDateString('pt-BR')+' às '+fmtClock(ts); }
   function formatOnline(ts){ ts=tsMillis(ts)||now(); var d=new Date(ts), today=new Date(); return 'online agora • '+(d.toDateString()===today.toDateString()?'hoje às '+fmtClock(ts):d.toLocaleDateString('pt-BR')+' às '+fmtClock(ts)); }
   function ensurePresenceUi(){ var sub=$('chat-recipient-role'); if(!sub) return null; var old1=$('chat-v151-presence-line'); if(old1) old1.remove(); var old2=$('chat-v152-presence-line'); if(old2) old2.remove(); var line=$('chat-v153-presence-line'); if(!line){ line=document.createElement('div'); line.id='chat-v153-presence-line'; line.innerHTML='<span id="chat-v153-presence-dot" class="chat-v153-dot"></span><span id="chat-v153-presence-text">carregando presença...</span>'; sub.insertAdjacentElement('afterend', line); } var composer=document.querySelector('.chat-v103-composer') || ($('chat-input')?$('chat-input').parentElement:null); if(composer && !$('chat-v153-typing-line')){ var typing=document.createElement('div'); typing.id='chat-v153-typing-line'; typing.innerHTML='<i class="fas fa-ellipsis"></i><span id="chat-v153-typing-text"></span>'; composer.parentElement.insertBefore(typing, composer); } return line; }
   function updatePresenceUi(){ ensurePresenceUi(); var dot=$('chat-v153-presence-dot'), label=$('chat-v153-presence-text'), typing=$('chat-v153-typing-line'), typingText=$('chat-v153-typing-text'); var conv=conversationKey(); var typingUser=(usersCache||[]).find(function(u){ if(intersects(aliasesUser(u),meAliases())) return false; return !!u.chatTypingActiveV153 && norm(u.chatTypingConversationV153)===norm(conv) && tsMillis(u.chatTypingAtV153) && now()-tsMillis(u.chatTypingAtV153)<3200; }); if(typingUser){ if(typingText) typingText.textContent=userName(typingUser)+' está digitando...'; if(typing) typing.classList.add('active'); } else { if(typingText) typingText.textContent=''; if(typing) typing.classList.remove('active'); } var users=selectedRecipientUsers(); if(!users.length){ if(dot) dot.className='chat-v153-dot'; if(label) label.textContent='visto por último não registrado ainda'; return; } var online=users.filter(isOnline); if(online.length){ if(dot) dot.className='chat-v153-dot online'; if(label) label.textContent=(online.length>1 ? online.length+' pessoas online agora' : formatOnline(latestSeen(online[0]))); } else { var latest=users.slice().sort(function(a,b){ return effectiveSeen(b)-effectiveSeen(a); })[0]; if(dot) dot.className='chat-v153-dot'; if(label) label.textContent=formatSeen(effectiveSeen(latest)); } }
   function currentUserDocId(){ var live=liveUserFromAliases(meAliases()); var u=current()||{}; return txt((live && (live.__docId || live.docId || live.firestoreId)) || u.__docId || u.docId || u.firestoreId || u.firebaseDocId || u.id || meId()); }
-  function markPresence(online, force){ if(!current()) return; if(online && !force && now()-lastPresenceWrite<2200) return; lastPresenceWrite=now(); try{ var col=getCol('concenal_users'); if(!col) return; var t=now(); var data={online:!!online,isOnline:!!online,presenceState:online?'online':'offline',presenceAt:t,lastSeenAt:t,lastOnlineAt:t,chatOpen:!!(!$('modal-chat') || !$('modal-chat').classList.contains('hidden')),chatConversationOpen:conversationKey(),updatedAt:t,id:meId(),name:meName(),displayName:meName()}; if(!online){ data.chatTypingActiveV153=false; data.chatTypingAtV153=t; } col.doc(currentUserDocId()).set(data,{merge:true}).catch(function(){}); }catch(e){} }
+  function markPresence(online, force){ var app=$('app-screen'), login=$('login-screen'); if(!current()) return; if(online && (!runtimeLogged || !app || app.classList.contains('hidden') || (login && !login.classList.contains('hidden')))) return; if(online && now()-lastPresenceWrite<(force?2500:12000)) return; lastPresenceWrite=now(); try{ var col=getCol('concenal_users'); if(!col) return; var t=now(); var data={online:!!online,isOnline:!!online,presenceState:online?'online':'offline',presenceAt:t,lastSeenAt:t,lastOnlineAt:t,chatOpen:!!(!$('modal-chat') || !$('modal-chat').classList.contains('hidden')),chatConversationOpen:conversationKey(),updatedAt:t,id:meId(),name:meName(),displayName:meName()}; if(!online){ data.chatTypingActiveV153=false; data.chatTypingAtV153=t; } col.doc(currentUserDocId()).set(data,{merge:true}).catch(function(){}); }catch(e){} }
   function markOffline(){ sendTyping(false,true); markPresence(false,true); }
-  function sendTyping(active, force){ clearTimeout(typingTimer); if(!current()) return; var apply=function(){ try{ var col=getCol('concenal_users'); if(!col) return; var t=now(); col.doc(currentUserDocId()).set({chatTypingActiveV153:!!active,chatTypingConversationV153:conversationKey(),chatTypingAtV153:t,online:true,isOnline:true,presenceState:'online',presenceAt:t,lastSeenAt:t,lastOnlineAt:t,updatedAt:t,id:meId(),name:meName(),displayName:meName()},{merge:true}).catch(function(){}); }catch(e){} }; clearTimeout(typingThrottle); if(active && !force) typingThrottle=setTimeout(apply,80); else apply(); if(active) typingTimer=setTimeout(function(){ sendTyping(false,true); },1800); }
+  function sendTyping(active, force){ clearTimeout(typingTimer); var app=$('app-screen'), login=$('login-screen'); if(!current() || !runtimeLogged || !app || app.classList.contains('hidden') || (login && !login.classList.contains('hidden'))) return; var apply=function(){ try{ var col=getCol('concenal_users'); if(!col) return; var t=now(); col.doc(currentUserDocId()).set({chatTypingActiveV153:!!active,chatTypingConversationV153:conversationKey(),chatTypingAtV153:t,online:true,isOnline:true,presenceState:'online',presenceAt:t,lastSeenAt:t,lastOnlineAt:t,updatedAt:t,id:meId(),name:meName(),displayName:meName()},{merge:true}).catch(function(){}); }catch(e){} }; clearTimeout(typingThrottle); if(active && !force) typingThrottle=setTimeout(apply,80); else apply(); if(active) typingTimer=setTimeout(function(){ sendTyping(false,true); },1800); }
   function subscribePresence(){ if(!usersUnsub){ try{ var c=getCol('concenal_users'); if(c) usersUnsub=c.onSnapshot(function(snap){ var list=[]; snap.forEach(function(doc){ var d=doc.data()||{}; list.push(Object.assign({}, d, {id:(d.id||doc.id), __docId:doc.id})); }); usersCache=list; updatePresenceUi(); }, function(err){ console.warn('Presença online indisponível:', err); }); }catch(e){} } if(!routesUnsub){ try{ var r=getCol('concenal_chat_routes'); if(r) routesUnsub=r.onSnapshot(function(snap){ var list=[]; snap.forEach(function(doc){ var d=doc.data()||{}; list.push(Object.assign({}, d, {id:(d.id||doc.id), routeId:(d.routeId||doc.id), __docId:doc.id})); }); routesCache=list; updatePresenceUi(); }, function(){}); }catch(e){} } }
 
   function formatDuration(ms){ var total=Math.max(0,Math.floor(ms/1000)); return String(Math.floor(total/60)).padStart(2,'0')+':'+String(total%60).padStart(2,'0'); }
@@ -15782,10 +15798,10 @@
     if(typeof window.loadChatUsers==='function' && !window.loadChatUsers.__v153Wrapped){ originalLoadChatUsers=window.loadChatUsers; window.loadChatUsers=markPatched(async function(){ var out=await originalLoadChatUsers.apply(this,arguments); ensureChatUi(); updatePresenceUi(); return out; }); }
     if(typeof window.clearChatAttachment==='function' && !window.clearChatAttachment.__v153Wrapped){ originalClearChatAttachment=window.clearChatAttachment; window.clearChatAttachment=markPatched(function(){ var out=originalClearChatAttachment.apply(this,arguments); clearAudioUiOnly(); return out; }); }
   }
-  function boot(){ installSessionNoAutoLogin(); installWrappers(); ensureChatUi(); subscribePresence(); updatePresenceUi(); if(!presenceTimer) presenceTimer=setInterval(function(){ if(current()){ markPresence(true,false); updatePresenceUi(); } },2500); }
+  function boot(){ installSessionNoAutoLogin(); installWrappers(); ensureChatUi(); subscribePresence(); updatePresenceUi(); if(!presenceTimer) presenceTimer=setInterval(function(){ var app=$('app-screen'), login=$('login-screen'); if(runtimeLogged && current() && app && !app.classList.contains('hidden') && !(login && !login.classList.contains('hidden'))){ markPresence(true,false); updatePresenceUi(); } },2500); }
 
   window.addEventListener('beforeunload',function(){ markOffline(); clearStoredSessions(); });
-  document.addEventListener('visibilitychange',function(){ if(document.hidden) markOffline(); else { markPresence(true,true); updatePresenceUi(); } });
+  document.addEventListener('visibilitychange',function(){ if(document.hidden) markOffline(); else { var app=$('app-screen'), login=$('login-screen'); if(runtimeLogged && current() && app && !app.classList.contains('hidden') && !(login && !login.classList.contains('hidden'))) markPresence(true,true); updatePresenceUi(); } });
   document.addEventListener('click',function(ev){ var close=ev.target && ev.target.closest ? ev.target.closest('.chat-v103-close,[onclick*="closeModal(\'modal-chat\')"],[onclick*="closeModal(&quot;modal-chat&quot;)"]') : null; if(close) setTimeout(function(){ sendTyping(false,true); markOffline(); document.body.classList.remove('chat-v153-open'); },50); },true);
   clearStoredSessions();
   boot();
@@ -15858,5 +15874,1395 @@
 })();
 </script>
 
+
+
+<!-- V155 - Correção login professor travando funções -->
+<script id="concenal-v155-login-professor-destravar">
+(function(){
+  'use strict';
+  if(window.__concenalV155LoginProfessor) return;
+  window.__concenalV155LoginProfessor = true;
+
+  function $(id){ return document.getElementById(id); }
+  function unlockScreen(){
+    var app = $('app-screen');
+    if(app && !app.classList.contains('hidden')){
+      ['login-screen','setup-screen','loading-overlay'].forEach(function(id){ var el=$(id); if(el) el.classList.add('hidden'); });
+      document.body.classList.remove('pointer-events-none');
+      document.querySelectorAll('button,input,select,textarea,a').forEach(function(el){ el.style.pointerEvents='auto'; });
+    }
+  }
+
+  ['showApp','updateUI','renderGradesTable'].forEach(function(name){
+    var fn = window[name];
+    if(typeof fn !== 'function' || fn.__v155Guard) return;
+    var running = false;
+    var wrapped = function(){
+      if(running) return;
+      running = true;
+      try { return fn.apply(this, arguments); }
+      catch(e){ console.error('Erro em '+name+':', e); }
+      finally { running = false; setTimeout(unlockScreen, 60); }
+    };
+    wrapped.__v155Guard = true;
+    window[name] = wrapped;
+  });
+
+  document.addEventListener('click', function(){ setTimeout(unlockScreen, 30); }, true);
+  document.addEventListener('input', function(){ setTimeout(unlockScreen, 30); }, true);
+  setInterval(unlockScreen, 1800);
+  setTimeout(unlockScreen, 200);
+})();
+</script>
+
+
+
+<!-- V156 - Correção definitiva do login do professor: entrada leve, sem travamento e painel inicial estável -->
+<script id="concenal-v156-professor-login-leve">
+(function(){
+  'use strict';
+  if(window.__CONCENAL_V156_PROFESSOR_LOGIN_LEVE__) return;
+  window.__CONCENAL_V156_PROFESSOR_LOGIN_LEVE__ = true;
+
+  function $(id){ return document.getElementById(id); }
+  function isAppOpen(){ var app=$('app-screen'); return !!(app && !app.classList.contains('hidden')); }
+  function unlock(){
+    if(!isAppOpen()) return;
+    ['loading-overlay','setup-screen','login-screen'].forEach(function(id){ var el=$(id); if(el) el.classList.add('hidden'); });
+    document.body.classList.remove('pointer-events-none');
+    document.documentElement.style.pointerEvents = 'auto';
+    document.body.style.pointerEvents = 'auto';
+    var app=$('app-screen'); if(app) app.style.pointerEvents='auto';
+    document.querySelectorAll('button,input,select,textarea,a,[onclick]').forEach(function(el){
+      el.style.pointerEvents='auto';
+      if(el.hasAttribute('data-v156-disabled')){ el.removeAttribute('disabled'); el.removeAttribute('data-v156-disabled'); }
+    });
+  }
+
+  function returnHomeOnce(){
+    if(!isAppOpen()) return;
+    unlock();
+    if(!window.__concenalV156HomeDone){
+      window.__concenalV156HomeDone = true;
+      setTimeout(function(){
+        try{
+          if(typeof window.returnToStartPanel === 'function') window.returnToStartPanel();
+          else document.body.classList.add('v122-home','v120-home','v121-home');
+        }catch(e){}
+      }, 350);
+    }
+  }
+
+  function protectLoginButton(){
+    var form=$('login-form'), btn=$('btn-login');
+    if(!form || form.__v156Protected) return;
+    form.__v156Protected = true;
+    form.addEventListener('submit', function(){
+      window.__concenalV156HomeDone = false;
+      if(btn){
+        setTimeout(function(){
+          if(btn.disabled){ btn.disabled=false; btn.classList.remove('opacity-70','cursor-wait'); }
+        }, 7000);
+      }
+    }, true);
+  }
+
+  function protectChatOpen(){
+    var btn=$('btn-chat');
+    if(btn && !btn.__v156ChatOpenProtected){
+      btn.__v156ChatOpenProtected = true;
+      btn.addEventListener('click', function(){
+        unlock();
+        setTimeout(function(){
+          try{ if(typeof window.loadChatUsers === 'function') window.loadChatUsers(); }catch(e){}
+        }, 200);
+      }, true);
+    }
+  }
+
+  try{ window.renderTeacherHero = renderTeacherHero; }catch(e){}
+
+  function patchShowApp(){
+    if(typeof window.showApp !== 'function' || window.showApp.__v156Patched) return;
+    var old = window.showApp;
+    window.showApp = function(){
+      var oldLoad = window.loadChatUsers;
+      try{
+        window.loadChatUsers = function(){ return Promise.resolve([]); };
+        var out = old.apply(this, arguments);
+        return out;
+      }catch(e){
+        console.error('[V156] showApp:', e);
+      }finally{
+        setTimeout(function(){ if(oldLoad) window.loadChatUsers = oldLoad; protectChatOpen(); unlock(); returnHomeOnce(); }, 80);
+        setTimeout(unlock, 500);
+        setTimeout(unlock, 1500);
+      }
+    };
+    window.showApp.__v156Patched = true;
+  }
+
+  function patchFunction(name){
+    var fn = window[name];
+    if(typeof fn !== 'function' || fn.__v156Patched) return;
+    var running = false;
+    var last = 0;
+    var wrapped = function(){
+      var now = Date.now();
+      if(running) return;
+      if(name !== 'renderGradesTable' && now - last < 40) return;
+      running = true; last = now;
+      try{ return fn.apply(this, arguments); }
+      catch(e){ console.error('[V156] erro em '+name+':', e); }
+      finally{ running = false; setTimeout(unlock, 30); }
+    };
+    wrapped.__v156Patched = true;
+    window[name] = wrapped;
+  }
+
+  function install(){
+    protectLoginButton();
+    patchShowApp();
+    ['updateUI','renderGradesTable','populateClassSelect','loadParentSubjectsAndPopulate'].forEach(patchFunction);
+    protectChatOpen();
+    unlock();
+  }
+
+  window.addEventListener('error', function(ev){
+    try{ console.error('[V156] erro capturado:', ev.message, ev.filename, ev.lineno); unlock(); }catch(e){}
+  });
+  window.addEventListener('unhandledrejection', function(ev){
+    try{ console.error('[V156] promessa rejeitada:', ev.reason); unlock(); }catch(e){}
+  });
+  document.addEventListener('click', function(){ setTimeout(unlock, 20); }, true);
+  document.addEventListener('input', function(){ setTimeout(unlock, 20); }, true);
+  document.addEventListener('DOMContentLoaded', function(){ install(); setTimeout(install,300); setTimeout(install,1200); });
+  install();
+  setInterval(function(){ install(); if(isAppOpen()) unlock(); }, 2000);
+})();
+</script>
+
+
+
+<!-- V157 - Correção real: login do professor sem piscadas + presença online verdadeira -->
+<script id="concenal-v157-login-professor-home-e-presenca-real">
+(function(){
+  'use strict';
+  if(window.__CONCENAL_V157_LOGIN_PROFESSOR_HOME_PRESENCA__) return;
+  window.__CONCENAL_V157_LOGIN_PROFESSOR_HOME_PRESENCA__ = true;
+
+  var BOOT_LOCK_MS = 2600;
+  var explicitModuleUntil = 0;
+  var homeLockUntil = 0;
+  var lastHomeApply = 0;
+
+  function $(id){ return document.getElementById(id); }
+  function now(){ return Date.now(); }
+  function appOpen(){ var app=$('app-screen'); var login=$('login-screen'); return !!(app && !app.classList.contains('hidden') && !(login && !login.classList.contains('hidden'))); }
+  function role(){ try{ var u=window.currentUser || currentUser || {}; return String(u.role || u.accessMode || u.perfil || '').toLowerCase(); }catch(e){ return ''; } }
+  function isProfessorLike(){ var r=role(); return /teacher|prof|professor|developer/.test(r); }
+  function isHomeLocked(){ return appOpen() && isProfessorLike() && now() < homeLockUntil && now() > explicitModuleUntil; }
+  function unlockOverlay(){
+    ['loading-overlay','setup-screen'].forEach(function(id){ var el=$(id); if(el) el.classList.add('hidden'); });
+    var app=$('app-screen'); if(app){ app.style.pointerEvents='auto'; app.classList.remove('pointer-events-none'); }
+    document.body.style.pointerEvents='auto';
+    document.documentElement.style.pointerEvents='auto';
+  }
+  function markExplicitModule(){
+    explicitModuleUntil = now() + 5000;
+    homeLockUntil = 0;
+    document.body.classList.add('v132-module','v122-module');
+    document.body.classList.remove('v132-home','v122-home','v120-home','v121-home');
+  }
+  function markHome(){
+    explicitModuleUntil = 0;
+    document.body.classList.add('v132-active','v132-home','v122-home','v120-home','v121-home');
+    document.body.classList.remove('v132-module','v122-module','v120-module','v121-module');
+    var bar1=$('v132-module-bar'), bar2=$('v122-module-bar');
+    if(bar1) bar1.style.display='none';
+    if(bar2) bar2.style.display='none';
+  }
+  function safeReturnHome(){
+    if(!appOpen()) return;
+    if(now() - lastHomeApply < 80) return;
+    lastHomeApply = now();
+    unlockOverlay();
+    markHome();
+    try{ if(typeof window.returnToStartPanel === 'function') window.returnToStartPanel(); }catch(e){}
+    markHome();
+  }
+  function startHomeLock(){
+    if(!isProfessorLike()) return;
+    homeLockUntil = now() + BOOT_LOCK_MS;
+    explicitModuleUntil = 0;
+    setTimeout(safeReturnHome, 80);
+    setTimeout(safeReturnHome, 250);
+    setTimeout(safeReturnHome, 650);
+    setTimeout(safeReturnHome, 1300);
+    setTimeout(function(){ if(isHomeLocked()) safeReturnHome(); }, 2300);
+  }
+  function isModuleClickTarget(t){
+    if(!t || !t.closest) return false;
+    return !!t.closest('.v132-card,.v122-module-card,[data-v122-mode],[id^="nav-"],#v122-back-btn,#v132-module-bar button,.v132-back,.v122-back-btn');
+  }
+  document.addEventListener('click', function(ev){
+    var t=ev.target;
+    if(isModuleClickTarget(t)){
+      var back = t.closest && t.closest('#v122-back-btn,.v132-back,.v122-back-btn');
+      if(back){ setTimeout(function(){ homeLockUntil=0; safeReturnHome(); }, 20); return; }
+      markExplicitModule();
+    }
+    setTimeout(unlockOverlay, 20);
+  }, true);
+
+  try{ window.renderTeacherHero = renderTeacherHero; }catch(e){}
+
+  function patchShowApp(){
+    if(typeof window.showApp !== 'function' || window.showApp.__v157HomePatch) return;
+    var old=window.showApp;
+    window.showApp=function(){
+      var out;
+      try{ out=old.apply(this, arguments); }
+      finally{ setTimeout(startHomeLock, 40); setTimeout(unlockOverlay, 200); }
+      return out;
+    };
+    window.showApp.__v157HomePatch = true;
+  }
+  function patchUpdateUI(){
+    if(typeof window.updateUI !== 'function' || window.updateUI.__v157HomePatch) return;
+    var old=window.updateUI;
+    window.updateUI=function(){
+      if(isHomeLocked()){
+        safeReturnHome();
+        return;
+      }
+      return old.apply(this, arguments);
+    };
+    window.updateUI.__v157HomePatch = true;
+  }
+  function patchSwitchMode(){
+    if(typeof window.switchMode !== 'function' || window.switchMode.__v157HomePatch) return;
+    var old=window.switchMode;
+    window.switchMode=function(m){
+      if(m) markExplicitModule();
+      return old.apply(this, arguments);
+    };
+    window.switchMode.__v157HomePatch = true;
+  }
+  function patchRenderGrades(){
+    if(typeof window.renderGradesTable !== 'function' || window.renderGradesTable.__v157HomePatch) return;
+    var old=window.renderGradesTable;
+    window.renderGradesTable=function(){
+      if(isHomeLocked()){
+        safeReturnHome();
+        return;
+      }
+      return old.apply(this, arguments);
+    };
+    window.renderGradesTable.__v157HomePatch = true;
+  }
+  function patchLogin(){
+    var form=$('login-form');
+    if(form && !form.__v157LoginPatch){
+      form.__v157LoginPatch=true;
+      form.addEventListener('submit', function(){
+        homeLockUntil = now() + BOOT_LOCK_MS;
+        explicitModuleUntil = 0;
+        setTimeout(function(){ if(appOpen()) startHomeLock(); }, 300);
+      }, true);
+    }
+  }
+  function patchUserCollectionWrites(){
+    if(typeof window.getCollection !== 'function' || window.getCollection.__v157PresencePatch) return;
+    var original = window.getCollection;
+    window.getCollection = function(name){
+      var col = original.apply(this, arguments);
+      if(name === 'concenal_users' && col && !col.__v157PresencePatch){
+        var oldDoc = col.doc ? col.doc.bind(col) : null;
+        if(oldDoc){
+          col.doc = function(id){
+            var ref = oldDoc(id);
+            if(ref && typeof ref.set === 'function' && !ref.__v157PresencePatch){
+              var oldSet = ref.set.bind(ref);
+              ref.set = function(data, opts){
+                try{
+                  if(data && (data.online === true || data.isOnline === true || data.presenceState === 'online')){
+                    if(!appOpen()){
+                      data = Object.assign({}, data, {
+                        online:false,
+                        isOnline:false,
+                        presenceState:'offline',
+                        chatTypingActiveV153:false,
+                        chatOpen:false
+                      });
+                    } else {
+                      data = Object.assign({}, data, {
+                        online:true,
+                        isOnline:true,
+                        presenceState:'online',
+                        presenceSessionId: window.__concenalPresenceSessionId || (window.__concenalPresenceSessionId = 'sess_'+Date.now()+'_'+Math.random().toString(36).slice(2))
+                      });
+                    }
+                  }
+                }catch(e){}
+                return oldSet(data, opts);
+              };
+              ref.__v157PresencePatch = true;
+            }
+            return ref;
+          };
+        }
+        col.__v157PresencePatch = true;
+      }
+      return col;
+    };
+    window.getCollection.__v157PresencePatch = true;
+  }
+  function forceOfflineOnLoginScreen(){
+    var login=$('login-screen'), app=$('app-screen');
+    if(login && !login.classList.contains('hidden')){
+      try{ window.__concenalPresenceSessionId = null; }catch(e){}
+      if(app) app.classList.add('hidden');
+    }
+  }
+  function install(){
+    patchUserCollectionWrites();
+    patchLogin();
+    patchShowApp();
+    patchUpdateUI();
+    patchSwitchMode();
+    patchRenderGrades();
+    unlockOverlay();
+    forceOfflineOnLoginScreen();
+  }
+  document.addEventListener('DOMContentLoaded', function(){ install(); setTimeout(install, 250); setTimeout(install, 1000); });
+  install();
+  setInterval(function(){ install(); if(isHomeLocked()) safeReturnHome(); else if(appOpen()) unlockOverlay(); forceOfflineOnLoginScreen(); }, 700);
+})();
+</script>
+
+
+<!-- V158 - Correção definitiva: identidade real do professor + painel sem direção falsa + online real -->
+<script id="concenal-v158-professor-identidade-online-real">
+(function(){
+  'use strict';
+  if(window.__CONCENAL_V158_PROFESSOR_IDENTITY_ONLINE__) return;
+  window.__CONCENAL_V158_PROFESSOR_IDENTITY_ONLINE__ = true;
+
+  var lastLoginTyped = '';
+  var lastFix = 0;
+  var fixing = false;
+  var PRESENCE_TTL = 15000;
+
+  function $(id){ return document.getElementById(id); }
+  function txt(v){ return v == null ? '' : String(v).replace(/\s+/g,' ').trim(); }
+  function norm(v){ return txt(v).normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase(); }
+  function current(){ try{ return currentUser || null; }catch(e){ return null; } }
+  function data(){ try{ return appData || {}; }catch(e){ return {}; } }
+  function firstRealName(name){
+    var parts = txt(name).split(/\s+/).filter(Boolean);
+    if(!parts.length) return 'Professor';
+    if(/^prof(essor)?\.?$/i.test(parts[0]) && parts[1]) return parts[1];
+    return parts[0];
+  }
+  function nameOf(u){ return txt((u||{}).displayName || (u||{}).name || (u||{}).fullName || (u||{}).username || 'Professor'); }
+  function rawRole(u){ return norm((u||{}).role || (u||{}).perfil || (u||{}).type || (u||{}).tipo || ''); }
+  function accessMode(u){ return norm((u||{}).accessMode || (u||{}).accessLevel || ''); }
+  function isTeacher(u){
+    var r = rawRole(u), n = norm(nameOf(u));
+    return ['teacher','professor','professora','docente'].indexOf(r) >= 0 || /^professor\b/.test(n) || /^professora\b/.test(n);
+  }
+  function isDirectionStrict(u){
+    var r = rawRole(u);
+    return ['admin','coord','coordenador','coordenacao','direcao','direção','diretor','diretoria','secretaria','secretario'].indexOf(r) >= 0;
+  }
+  function labelOf(u){
+    if(!u) return '';
+    if(isTeacher(u)) return accessMode(u)==='developer' ? 'Professor Desenvolvedor' : 'Professor';
+    if(rawRole(u)==='admin') return 'Direção Geral';
+    if(['coord','coordenador','coordenacao'].indexOf(rawRole(u))>=0) return 'Coordenação';
+    if(['secretaria','secretario'].indexOf(rawRole(u))>=0) return 'Secretaria';
+    if(['parent','responsavel','responsável'].indexOf(rawRole(u))>=0) return 'Responsável';
+    return txt((u||{}).role || 'Usuário');
+  }
+  function clearOldDirectionHome(){
+    var u=current();
+    if(!u || !isTeacher(u)) return;
+    document.body.classList.remove('v132-active','v132-home','v132-module','v132-direction','v130-direction-profile','v132-parent','v130-parent-profile');
+    var panels = [$('v132-home-panel'), $('v132-module-bar')];
+    panels.forEach(function(el){ if(el) el.remove(); });
+    var hero = $('v116-hero');
+    if(hero && /Direção Geral|Direção\s*!|Direção\s*\/\s*Coordenação/i.test(hero.textContent || '')){
+      hero.removeAttribute('data-v158-hero-signature');
+      var nm = nameOf(u), label = labelOf(u), first = firstRealName(nm);
+      var title = hero.querySelector('.v116-title');
+      if(title) title.textContent = title.textContent.replace(/,\s*Direção!/i, ', '+first+'!').replace(/^([^,]+),\s*.*!$/, '$1, '+first+'!');
+      var n = hero.querySelector('.v116-name'); if(n) n.textContent = nm;
+      var r = hero.querySelector('.v116-role'); if(r) r.textContent = label;
+      hero.querySelectorAll('.v116-mini').forEach(function(card){
+        var lab = norm((card.querySelector('.v116-mini-label')||{}).textContent || '');
+        var val = card.querySelector('.v116-mini-value');
+        if(!val) return;
+        if(lab.indexOf('perfil')>=0) val.textContent = label;
+      });
+    }
+  }
+  function forceHeaderIdentity(){
+    var u=current(); if(!u) return;
+    var nm = nameOf(u), lb = labelOf(u);
+    var n = $('user-display-name'); if(n) n.textContent = nm;
+    var l = $('user-access-label'); if(l) l.textContent = lb;
+    if(typeof window.renderAvatar === 'function'){
+      try{ window.renderAvatar('user-avatar-header', u); }catch(e){}
+    }
+  }
+  function forceProfessorHomeLabels(){
+    var u=current(); if(!u || !isTeacher(u)) return;
+    var nm = nameOf(u), lb = labelOf(u), first = firstRealName(nm);
+    var root = $('v116-hero');
+    if(root){
+      var title = root.querySelector('.v116-title');
+      if(title){
+        var m = title.textContent.match(/^(Bom dia|Boa tarde|Boa noite|Boa madrugada)/i);
+        title.textContent = (m ? m[1] : 'Olá') + ', ' + first + '!';
+      }
+      var sideName = root.querySelector('.v116-name'); if(sideName) sideName.textContent = nm;
+      var sideRole = root.querySelector('.v116-role'); if(sideRole) sideRole.textContent = lb;
+      root.querySelectorAll('.v116-mini').forEach(function(card){
+        var lab = norm((card.querySelector('.v116-mini-label')||{}).textContent || '');
+        var val = card.querySelector('.v116-mini-value'); if(!val) return;
+        if(lab.indexOf('perfil')>=0) val.textContent = lb;
+      });
+    }
+    // Segurança: se algum painel moderno de direção reaparecer para professor, remove imediatamente.
+    var wrong = $('v132-home-panel');
+    if(wrong && /Direção Geral|Direção\s*\/\s*Coordenação/i.test(wrong.textContent || '')) wrong.remove();
+  }
+  function rejectStaleDirectionSession(){
+    var u=current();
+    if(!u || !lastLoginTyped) return false;
+    var typed = norm(lastLoginTyped);
+    var aliases = [u.username,u.login,u.email,u.name,u.displayName,u.fullName].map(norm).filter(Boolean);
+    var matchesTyped = aliases.some(function(a){ return a === typed; });
+    if(!matchesTyped && isDirectionStrict(u) && !/^admin$|^direcao$|^direção$|^coord/.test(typed)){
+      try{ currentUser = null; }catch(e){}
+      try{ if(typeof window.clearSession === 'function') window.clearSession(); }catch(e){}
+      var app=$('app-screen'), login=$('login-screen');
+      if(app) app.classList.add('hidden');
+      if(login) login.classList.remove('hidden');
+      var err=$('login-error'), msg=$('error-msg-text');
+      if(err && msg){ msg.textContent='Sessão antiga de direção removida. Faça login do professor novamente.'; err.classList.remove('hidden'); }
+      return true;
+    }
+    return false;
+  }
+  function fixAll(){
+    if(fixing || Date.now()-lastFix < 90) return;
+    fixing = true; lastFix = Date.now();
+    try{
+      if(rejectStaleDirectionSession()) return;
+      forceHeaderIdentity();
+      clearOldDirectionHome();
+      forceProfessorHomeLabels();
+    }finally{ fixing=false; }
+  }
+  try{ window.renderTeacherHero = renderTeacherHero; }catch(e){}
+
+  function patchShowApp(){
+    if(typeof window.showApp !== 'function' || window.showApp.__v158IdentityPatch) return;
+    var old = window.showApp;
+    window.showApp = function(){
+      // Nunca reutiliza painel visual antigo entre um usuário e outro.
+      ['v132-home-panel','v132-module-bar','v122-module-bar'].forEach(function(id){ var el=$(id); if(el) el.remove(); });
+      document.body.classList.remove('v132-active','v132-home','v132-module','v132-direction','v130-direction-profile','v132-parent','v130-parent-profile');
+      var out = old.apply(this, arguments);
+      setTimeout(fixAll,40); setTimeout(fixAll,180); setTimeout(fixAll,600); setTimeout(fixAll,1400);
+      return out;
+    };
+    window.showApp.__v158IdentityPatch = true;
+  }
+  function patchLogin(){
+    var form=$('login-form');
+    if(form && !form.__v158IdentityLogin){
+      form.__v158IdentityLogin = true;
+      form.addEventListener('submit', function(){
+        lastLoginTyped = txt(($('username')||{}).value || '');
+        try{ currentUser = null; }catch(e){}
+        ['v132-home-panel','v132-module-bar','v122-module-bar'].forEach(function(id){ var el=$(id); if(el) el.remove(); });
+        document.body.classList.remove('v132-active','v132-home','v132-module','v132-direction','v130-direction-profile','v132-parent','v130-parent-profile');
+      }, true);
+    }
+  }
+  function patchAccessLabel(){
+    try{
+      window.getAccessLabel = function(user){ return labelOf(user || current()); };
+    }catch(e){}
+  }
+  function patchChatPresenceDisplay(){
+    // Corrige qualquer bolinha verde antiga: só fica online se a presença tiver sido escrita há poucos segundos.
+    window.__concenalPresenceIsReallyOnlineV158 = function(u){
+      u = u || {};
+      var ts = 0;
+      ['presenceAt','lastOnlineAt','onlineAt'].forEach(function(k){
+        var v=u[k], t=0;
+        if(typeof v==='number') t = v < 10000000000 ? v*1000 : v;
+        else if(v && typeof v.toMillis==='function') t = v.toMillis();
+        else if(v && v.seconds) t = Number(v.seconds)*1000;
+        else if(typeof v==='string'){ var n=Number(v); t = n ? (n < 10000000000 ? n*1000 : n) : (Date.parse(v)||0); }
+        if(t>ts) ts=t;
+      });
+      var st = norm(u.presenceState || u.status || '');
+      if(st==='offline' || st==='saiu' || st==='desconectado') return false;
+      return !!((u.online===true || u.isOnline===true || st==='online') && ts && Date.now()-ts < PRESENCE_TTL);
+    };
+  }
+  function install(){ patchLogin(); patchShowApp(); patchAccessLabel(); patchChatPresenceDisplay(); fixAll(); }
+  install();
+  document.addEventListener('DOMContentLoaded', function(){ install(); setTimeout(install,250); setTimeout(fixAll,900); });
+  setInterval(function(){ install(); fixAll(); }, 700);
+})();
+</script>
+
+
+
+<!-- V159 - Correção real: professor não fica com tela branca após remover painel de Direção -->
+<script id="concenal-v159-professor-home-restore">
+(function(){
+  'use strict';
+  if(window.__CONCENAL_V159_PROFESSOR_HOME_RESTORE__) return;
+  window.__CONCENAL_V159_PROFESSOR_HOME_RESTORE__ = true;
+
+  function $(id){ return document.getElementById(id); }
+  function txt(v){ return v == null ? '' : String(v).replace(/\s+/g,' ').trim(); }
+  function norm(v){ return txt(v).normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase(); }
+  function current(){ try{ return currentUser || window.currentUser || null; }catch(e){ return window.currentUser || null; } }
+  function data(){ try{ return appData || window.appData || {}; }catch(e){ return window.appData || {}; } }
+  function role(u){ return norm((u||{}).role || (u||{}).perfil || (u||{}).type || ''); }
+  function access(u){ return norm((u||{}).accessMode || (u||{}).accessLevel || ''); }
+  function isTeacher(u){ var r=role(u), n=norm((u||{}).displayName || (u||{}).name || ''); return ['teacher','professor','professora','docente'].indexOf(r)>=0 || /^professor\b/.test(n) || /^professora\b/.test(n); }
+  function isDirectionStrict(u){ return ['admin','coord','coordenador','coordenacao','direcao','direção','diretor','diretoria','secretaria','secretario'].indexOf(role(u))>=0; }
+  function nameOf(u){ return txt((u||{}).displayName || (u||{}).name || (u||{}).fullName || (u||{}).username || 'Professor'); }
+  function firstName(n){ var p=txt(n).split(/\s+/).filter(Boolean); if(/^prof(essor)?\.?$/i.test(p[0]||'') && p[1]) return p[1]; return p[0] || 'Professor'; }
+  function labelOf(u){ if(isTeacher(u)) return access(u)==='developer' ? 'Professor Desenvolvedor' : 'Professor'; if(isDirectionStrict(u)) return role(u)==='admin'?'Direção Geral':'Direção / Coordenação'; return txt((u||{}).role || 'Usuário'); }
+  function esc(v){ return txt(v).replace(/[&<>"']/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];}); }
+  function now(){ return new Date(new Date().toLocaleString('en-US',{timeZone:'America/Maceio'})); }
+  function greet(){ var h=now().getHours(); if(h>=5&&h<12)return'Bom dia'; if(h>=12&&h<18)return'Boa tarde'; if(h>=18)return'Boa noite'; return'Boa madrugada'; }
+  function dateLine(){ var d=now(); return d.toLocaleDateString('pt-BR',{weekday:'long',day:'2-digit',month:'long',year:'numeric'}).replace(/^./,function(c){return c.toUpperCase();})+' • '+d.toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'}); }
+  function currentSubject(){ var d=data(); return txt(d.currentSubject || (($('subject-select')||{}).value) || 'Matemática'); }
+  function currentClass(){ var d=data(); return txt(d.currentClass || (($('class-select')||{}).value) || 'Turma'); }
+  function studentCount(){ try{ if(typeof window.getStudentsByClass==='function'){ var a=window.getStudentsByClass(); if(Array.isArray(a)) return a.length; } }catch(e){} var d=data(); return Array.isArray(d.students) ? d.students.length : '-'; }
+  function initials(n){ return txt(n).split(/\s+/).filter(Boolean).slice(0,2).map(function(p){return p.charAt(0).toUpperCase();}).join('') || 'P'; }
+  function avatarHTML(u){ var src=txt((u||{}).avatarUrl || (u||{}).avatar || (u||{}).photoURL || (u||{}).photo || ''); return src ? '<img src="'+esc(src)+'" onerror="this.parentElement.textContent=\''+esc(initials(nameOf(u)))+'\'">' : esc(initials(nameOf(u))); }
+  function appVisible(){ var app=$('app-screen'); return !!(app && !app.classList.contains('hidden')); }
+
+  function clearDirectionVisualState(){
+    document.body.classList.remove('v132-active','v132-home','v132-module','v132-direction','v132-parent','v130-direction-profile','v130-parent-profile');
+    document.body.classList.remove('v122-module','v120-module','v121-module');
+    document.body.classList.add('v122-home','v120-home','v121-home');
+    var wrong=$('v132-home-panel'); if(wrong) wrong.remove();
+    var wrongBar=$('v132-module-bar'); if(wrongBar) wrongBar.remove();
+  }
+
+  function ensureHero(){
+    var app=$('app-screen'), control=$('control-bar');
+    if(!app || !control) return null;
+    var hero=$('v116-hero');
+    if(!hero){
+      hero=document.createElement('section');
+      hero.id='v116-hero';
+      hero.className='no-print';
+      app.insertBefore(hero, control);
+    }
+    hero.style.display='block';
+    hero.classList.remove('hidden');
+    return hero;
+  }
+
+  function renderTeacherHero(){
+    var u=current();
+    if(!u || !isTeacher(u) || !appVisible()) return;
+    clearDirectionVisualState();
+    var nm=nameOf(u), lb=labelOf(u), hero=ensureHero();
+    if(!hero) return;
+    var subject=currentSubject(), cls=currentClass(), total=studentCount();
+    var html=''+
+      '<div class="v116-hero-inner">'+
+        '<div>'+ 
+          '<div class="v116-kicker"><i class="fas fa-sun"></i><span>'+esc(dateLine())+'</span></div>'+ 
+          '<h1 class="v116-title">'+esc(greet())+', '+esc(firstName(nm))+'!</h1>'+ 
+          '<p class="v116-subtitle">Seja bem-vindo(a) ao Diário Escolar CONCENAL. Escolha um módulo abaixo para começar. Nada será aberto sem você clicar.</p>'+ 
+          '<div id="v122-modules-center"><div class="v122-modules-shell"><div class="v122-modules-head"><span class="v122-modules-title"><i class="fas fa-compass"></i> Módulos do sistema</span></div><div class="v122-modules-grid">'+
+            moduleButton('grades','Notas e Médias','Lançamentos e médias','fa-chart-line')+
+            moduleButton('attendance','Frequência','Controle de presença','fa-user-check')+
+            moduleButton('daily','Diário de Bordo','Registros de aula','fa-book-open')+
+            moduleButton('behavior','Relatório Individual','Aspectos avaliados','fa-clipboard-check')+
+            moduleButton('dashboard','Dashboard','Desempenho visual','fa-chart-pie')+
+            moduleButton('planning','Planejamento','Planos e roteiros','fa-tasks')+
+            moduleButton('activities','Atividades e Materiais','PDFs e materiais','fa-file-pdf')+
+            moduleButton('schedule','Horários','Grade de horários','fa-clock')+
+            moduleButton('calendar','Calendário','Datas e eventos','fa-calendar-alt')+
+          '</div></div></div>'+ 
+        '</div>'+ 
+        '<aside class="v116-side">'+
+          '<div class="v116-profile"><div class="v116-avatar">'+avatarHTML(u)+'</div><div class="min-w-0"><div class="v116-name">'+esc(nm)+'</div><div class="v116-role">'+esc(lb)+'</div></div></div>'+ 
+          '<div class="v116-mini-grid">'+
+            '<div class="v116-mini"><div class="v116-mini-label">Perfil</div><div class="v116-mini-value">'+esc(lb)+'</div></div>'+ 
+            '<div class="v116-mini"><div class="v116-mini-label">Disciplina</div><div class="v116-mini-value">'+esc(subject)+'</div></div>'+ 
+            '<div class="v116-mini"><div class="v116-mini-label">Turma</div><div class="v116-mini-value">'+esc(cls)+'</div></div>'+ 
+            '<div class="v116-mini"><div class="v116-mini-label">Alunos da turma</div><div class="v116-mini-value">'+esc(total)+'</div></div>'+ 
+          '</div>'+ 
+          '<div class="v116-quote"><i class="fas fa-quote-left mt-1"></i><span>Comunicação clara aproxima escola, família e aprendizagem.</span></div>'+ 
+        '</aside>'+ 
+      '</div>';
+    if(hero.getAttribute('data-v159-signature') !== nm+'|'+lb+'|'+subject+'|'+cls+'|'+total){
+      hero.innerHTML=html;
+      hero.setAttribute('data-v159-signature', nm+'|'+lb+'|'+subject+'|'+cls+'|'+total);
+      bindModules(hero);
+    }else{
+      bindModules(hero);
+    }
+    var control=$('control-bar'), main=$('main-content');
+    if(control) control.style.display='none';
+    if(main) main.style.display='none';
+  }
+
+  function moduleButton(id,name,desc,icon){
+    return '<button type="button" class="v122-module-card" data-v159-mode="'+esc(id)+'"><span class="v122-module-icon"><i class="fas '+esc(icon)+'"></i></span><span><span class="v122-module-name">'+esc(name)+'</span><span class="v122-module-desc">'+esc(desc)+'</span></span></button>';
+  }
+  function bindModules(root){
+    root.querySelectorAll('[data-v159-mode]').forEach(function(btn){
+      if(btn.__v159Bound) return;
+      btn.__v159Bound=true;
+      btn.addEventListener('click', function(e){
+        e.preventDefault(); e.stopPropagation();
+        openModule(txt(btn.getAttribute('data-v159-mode')));
+      });
+    });
+  }
+  function forceVisibleView(mode){
+    var map={grades:'view-grades',attendance:'view-attendance',daily:'view-daily',behavior:'view-behavior',dashboard:'view-dashboard',planning:'view-planning',activities:'view-activities',schedule:'view-schedule',calendar:'view-calendar'};
+    Object.keys(map).forEach(function(k){ var el=$(map[k]); if(!el)return; if(k===mode){el.classList.remove('hidden');el.style.display='';} else el.classList.add('hidden'); });
+  }
+  function renderMode(mode){
+    try{ if(mode==='grades' && window.renderGradesTable) window.renderGradesTable(); }catch(e){}
+    try{ if(mode==='attendance' && window.renderAttendanceTable) window.renderAttendanceTable(); }catch(e){}
+    try{ if(mode==='daily' && window.loadDailyData) window.loadDailyData(); }catch(e){}
+    try{ if(mode==='behavior' && window.renderBehaviorReportView) window.renderBehaviorReportView(); }catch(e){}
+    try{ if(mode==='dashboard' && window.showDashboardV90) window.showDashboardV90(); else if(mode==='dashboard' && window.renderPerformanceDashboardV52) window.renderPerformanceDashboardV52(); }catch(e){}
+    try{ if(mode==='planning' && window.renderPlanningView) window.renderPlanningView(); }catch(e){}
+    try{ if(mode==='activities' && window.renderActivitiesView) window.renderActivitiesView(); }catch(e){}
+    try{ if(mode==='schedule' && window.renderScheduleView) window.renderScheduleView(); }catch(e){}
+    try{ if(mode==='calendar' && window.renderCalendarView) window.renderCalendarView(); }catch(e){}
+  }
+  function ensureBackBar(mode){
+    var main=$('main-content'); if(!main || !main.parentNode) return;
+    var bar=$('v122-module-bar'); if(!bar){ bar=document.createElement('section'); bar.id='v122-module-bar'; bar.className='no-print'; main.parentNode.insertBefore(bar, main); }
+    var names={grades:'Notas e Médias',attendance:'Frequência',daily:'Diário de Bordo',behavior:'Relatório Individual',dashboard:'Dashboard',planning:'Planejamento',activities:'Atividades e Materiais',schedule:'Horários',calendar:'Calendário'};
+    bar.innerHTML='<div class="v122-module-shell"><button type="button" class="v122-back-btn" id="v159-back"><i class="fas fa-arrow-left"></i> Voltar ao painel inicial</button><div class="v122-module-info"><strong>'+esc(names[mode]||'Módulo')+'</strong></div></div>';
+    var back=$('v159-back'); if(back) back.onclick=function(e){ if(e){e.preventDefault();e.stopPropagation();} renderTeacherHero(); return false; };
+  }
+  function openModule(mode){
+    var u=current(); if(!u || !isTeacher(u)) return;
+    document.body.classList.remove('v132-active','v132-home','v132-module','v122-home','v120-home','v121-home');
+    document.body.classList.add('v122-module','v120-module','v121-module');
+    var hero=$('v116-hero'); if(hero) hero.style.display='none';
+    var control=$('control-bar'), main=$('main-content');
+    if(control) control.style.display='block';
+    if(main) main.style.display='block';
+    try{ data().currentMode=mode; }catch(e){}
+    try{ if(window.switchMode) window.switchMode(mode); }catch(e){}
+    try{ data().currentMode=mode; }catch(e){}
+    forceVisibleView(mode); renderMode(mode); ensureBackBar(mode);
+    setTimeout(function(){ forceVisibleView(mode); renderMode(mode); ensureBackBar(mode); },120);
+  }
+
+  try{ window.renderTeacherHero = renderTeacherHero; }catch(e){}
+
+  function patchShowApp(){
+    if(typeof window.showApp !== 'function' || window.showApp.__v159TeacherHomePatch) return;
+    var old=window.showApp;
+    window.showApp=function(){ var out=old.apply(this, arguments); setTimeout(renderTeacherHero,120); setTimeout(renderTeacherHero,450); setTimeout(renderTeacherHero,1200); return out; };
+    window.showApp.__v159TeacherHomePatch=true;
+  }
+  function patchBack(){ window.returnToStartPanel = function(){ renderTeacherHero(); return false; }; }
+  function boot(){ patchShowApp(); patchBack(); renderTeacherHero(); }
+  document.addEventListener('DOMContentLoaded', function(){ setTimeout(boot,250); setTimeout(boot,900); });
+  setTimeout(boot,500); setTimeout(boot,1600); setTimeout(boot,3000);
+  setInterval(function(){ if(appVisible() && current() && isTeacher(current()) && (!document.body.classList.contains('v122-module'))) renderTeacherHero(); }, 1500);
+})();
+</script>
+
+
+
+<!-- V161 - Restauração do layout original do professor + entrada sem abrir módulo automático -->
+<style id="concenal-v161-teacher-layout-restore-style">
+  /* Bloqueio curto apenas durante a montagem do painel, sem trocar layout e sem abrir módulo */
+  body.v161-teacher-boot #control-bar,
+  body.v161-teacher-boot #main-content,
+  body.v161-teacher-boot #v132-home-panel,
+  body.v161-teacher-boot #v132-module-bar,
+  body.v161-teacher-boot #v122-module-bar{
+    display:none!important;
+    visibility:hidden!important;
+    opacity:0!important;
+    pointer-events:none!important;
+  }
+  body.v161-teacher-boot #v116-hero{
+    display:block!important;
+    visibility:visible!important;
+    opacity:1!important;
+    pointer-events:auto!important;
+    animation:none!important;
+  }
+  body.v161-teacher-ready #v116-hero{
+    display:block!important;
+    visibility:visible!important;
+    opacity:1!important;
+    pointer-events:auto!important;
+  }
+  body.v161-teacher-ready:not(.v122-module) #control-bar,
+  body.v161-teacher-ready:not(.v122-module) #main-content{
+    display:none!important;
+  }
+  body.v161-teacher-ready.v122-module #v116-hero{
+    display:none!important;
+  }
+  body.v161-teacher-ready.v122-module #control-bar,
+  body.v161-teacher-ready.v122-module #main-content{
+    display:block!important;
+    visibility:visible!important;
+    opacity:1!important;
+    pointer-events:auto!important;
+  }
+  body.v161-teacher-ready #v116-hero,
+  body.v161-teacher-ready #v116-hero *{
+    animation:none!important;
+  }
+</style>
+<script id="concenal-v161-teacher-layout-restore">
+(function(){
+  'use strict';
+  if(window.__CONCENAL_V161_TEACHER_LAYOUT_RESTORE__) return;
+  window.__CONCENAL_V161_TEACHER_LAYOUT_RESTORE__ = true;
+
+  var booting = false;
+  var explicitModuleClick = false;
+
+  function $(id){ return document.getElementById(id); }
+  function txt(v){ return v == null ? '' : String(v).replace(/\s+/g,' ').trim(); }
+  function norm(v){ return txt(v).normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase(); }
+  function getUser(){ try{ return window.currentUser || currentUser || null; }catch(e){ return window.currentUser || null; } }
+  function roleOf(u){ return norm((u||{}).role || (u||{}).perfil || (u||{}).type || (u||{}).tipo || ''); }
+  function nameOf(u){ return txt((u||{}).displayName || (u||{}).name || (u||{}).fullName || (u||{}).username || ''); }
+  function accessOf(u){ return norm((u||{}).accessMode || (u||{}).accessLevel || ''); }
+  function isDirection(u){ return ['admin','coord','coordenador','coordenacao','direcao','direção','diretor','diretoria','secretaria','secretario'].indexOf(roleOf(u)) >= 0; }
+  function isTeacher(u){ var r=roleOf(u), n=norm(nameOf(u)); return ['teacher','professor','professora','docente'].indexOf(r)>=0 || /^professor\b/.test(n) || /^professora\b/.test(n) || (accessOf(u)==='developer' && !isDirection(u)); }
+  function appVisible(){ var app=$('app-screen'); return !!(app && !app.classList.contains('hidden')); }
+  function teacherLogged(){ var u=getUser(); return appVisible() && u && isTeacher(u) && !isDirection(u); }
+
+  function killWrongPanels(){
+    ['v132-home-panel','v132-module-bar'].forEach(function(id){ var el=$(id); if(el) el.remove(); });
+    document.body.classList.remove('v132-active','v132-home','v132-module','v132-direction','v132-parent','v160-professor-home','v160-professor-module');
+  }
+
+  function forceTeacherHome(){
+    if(!teacherLogged()) return;
+    if(explicitModuleClick) return;
+    killWrongPanels();
+    document.body.classList.remove('v122-module','v120-module','v121-module');
+    document.body.classList.add('v122-home','v120-home','v121-home','v161-teacher-ready');
+    var hero=$('v116-hero');
+    if(hero){ hero.style.display='block'; hero.classList.remove('hidden'); }
+    var control=$('control-bar'); if(control) control.style.display='none';
+    var main=$('main-content'); if(main) main.style.display='none';
+    var bar=$('v122-module-bar'); if(bar) bar.remove();
+    try{ if(window.appData) window.appData.currentMode = 'home'; }catch(e){}
+    try{ if(typeof window.renderTeacherHero === 'function') window.renderTeacherHero(); }catch(e){}
+  }
+
+  function beginBoot(){
+    booting = true;
+    explicitModuleClick = false;
+    document.body.classList.add('v161-teacher-boot');
+    document.body.classList.remove('v161-teacher-ready');
+    setTimeout(forceTeacherHome, 0);
+    setTimeout(forceTeacherHome, 30);
+    setTimeout(forceTeacherHome, 80);
+    setTimeout(forceTeacherHome, 160);
+    setTimeout(finishBoot, 260);
+    setTimeout(finishBoot, 520);
+  }
+
+  function finishBoot(){
+    if(!teacherLogged()) return;
+    booting = false;
+    forceTeacherHome();
+    document.body.classList.remove('v161-teacher-boot');
+    document.body.classList.add('v161-teacher-ready');
+  }
+
+  try{ window.renderTeacherHero = renderTeacherHero; }catch(e){}
+
+  function patchShowApp(){
+    if(typeof window.showApp !== 'function' || window.showApp.__v161TeacherRestore) return;
+    var old = window.showApp;
+    window.showApp = function(){
+      document.body.classList.add('v161-teacher-boot');
+      var out = old.apply(this, arguments);
+      var u=getUser();
+      if(u && isTeacher(u) && !isDirection(u)){
+        beginBoot();
+      }else{
+        document.body.classList.remove('v161-teacher-boot','v161-teacher-ready');
+      }
+      return out;
+    };
+    window.showApp.__v161TeacherRestore = true;
+  }
+
+  function patchSwitchMode(){
+    if(typeof window.switchMode !== 'function' || window.switchMode.__v161TeacherRestore) return;
+    var old = window.switchMode;
+    window.switchMode = function(mode){
+      if(teacherLogged() && !explicitModuleClick && booting){
+        return false;
+      }
+      return old.apply(this, arguments);
+    };
+    window.switchMode.__v161TeacherRestore = true;
+  }
+
+  function patchBack(){
+    var old = window.returnToStartPanel;
+    window.returnToStartPanel = function(){
+      explicitModuleClick = false;
+      var out;
+      try{ out = old && old.apply(this, arguments); }catch(e){}
+      setTimeout(forceTeacherHome, 0);
+      setTimeout(forceTeacherHome, 80);
+      return out === false ? false : out;
+    };
+  }
+
+  document.addEventListener('submit', function(e){
+    if(e.target && e.target.id === 'login-form'){
+      document.body.classList.add('v161-teacher-boot');
+      explicitModuleClick = false;
+    }
+  }, true);
+
+  document.addEventListener('click', function(e){
+    var t=e.target;
+    if(!t || !t.closest) return;
+    if(t.closest('[data-v159-mode], [data-v122-mode], .v122-module-card')){
+      explicitModuleClick = true;
+      document.body.classList.remove('v161-teacher-boot');
+      document.body.classList.add('v161-teacher-ready','v122-module','v120-module','v121-module');
+    }
+    if(t.closest('#v159-back, #v122-back-btn, .v122-back-btn, .v132-back')){
+      explicitModuleClick = false;
+      setTimeout(forceTeacherHome, 0);
+      setTimeout(forceTeacherHome, 120);
+    }
+  }, true);
+
+  function boot(){ patchShowApp(); patchSwitchMode(); patchBack(); if(teacherLogged() && !document.body.classList.contains('v122-module')) forceTeacherHome(); }
+  boot();
+  document.addEventListener('DOMContentLoaded', function(){ boot(); setTimeout(boot,80); setTimeout(boot,300); });
+  setTimeout(boot,500); setTimeout(boot,1200);
+  setInterval(function(){
+    boot();
+    if(teacherLogged() && !explicitModuleClick && !document.body.classList.contains('v122-module')) forceTeacherHome();
+  }, 800);
+})();
+</script>
+
+
+
+<!-- V162 - Correção definitiva: áudio do chat reproduzível, sem mexer no layout V161 -->
+<style id="concenal-v162-audio-chat-style">
+  .chat-v162-audio-box{
+    display:flex!important;
+    align-items:center!important;
+    gap:10px!important;
+    width:min(360px,74vw)!important;
+    max-width:100%!important;
+    padding:8px 10px!important;
+    border-radius:14px!important;
+    background:rgba(255,255,255,.72)!important;
+    border:1px solid rgba(4,120,87,.18)!important;
+    margin:4px 0 7px!important;
+  }
+  .chat-v162-audio-box i{color:#047857!important;font-size:14px!important;flex:0 0 auto!important;}
+  .chat-v162-audio-box audio{
+    width:100%!important;
+    min-width:180px!important;
+    height:38px!important;
+    display:block!important;
+  }
+  .chat-v162-audio-link{
+    display:block!important;
+    font-size:10px!important;
+    font-weight:800!important;
+    color:#047857!important;
+    text-decoration:none!important;
+    margin-top:4px!important;
+    opacity:.9!important;
+  }
+  body.dark-theme .chat-v162-audio-box{background:rgba(17,24,39,.72)!important;border-color:#065f46!important;}
+  @media(max-width:767px){.chat-v162-audio-box{width:100%!important}.chat-v162-audio-box audio{min-width:0!important}}
+</style>
+<script id="concenal-v162-audio-chat-fix">
+(function(){
+  'use strict';
+  if(window.__CONCENAL_V162_AUDIO_CHAT_FIX__) return;
+  window.__CONCENAL_V162_AUDIO_CHAT_FIX__ = true;
+
+  function $(id){ return document.getElementById(id); }
+  function txt(v){ return (v === undefined || v === null) ? '' : String(v); }
+  function esc(v){
+    return txt(v).replace(/[&<>'"]/g,function(c){
+      return {'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[c];
+    });
+  }
+  function isAudioLike(value){
+    var s = txt(value);
+    return /^data:audio\//i.test(s) ||
+           /^audio\//i.test(s) ||
+           /audio_chat_/i.test(s) ||
+           /\.(webm|ogg|mp3|wav|m4a|aac)(\?|#|$)/i.test(s) ||
+           /firebasestorage\.googleapis\.com/i.test(s) && /audio|webm|ogg|mp3|wav|m4a|aac/i.test(decodeURIComponentSafe(s));
+  }
+  function decodeURIComponentSafe(s){
+    try { return decodeURIComponent(s); } catch(e){ return s; }
+  }
+  function createPlayer(url, name){
+    var box = document.createElement('div');
+    box.className = 'chat-v162-audio-box';
+    box.setAttribute('data-v162-audio-ready','1');
+    box.innerHTML = '<i class="fas fa-microphone"></i><div style="flex:1;min-width:0"><audio controls preload="metadata" src="'+esc(url)+'"></audio><a class="chat-v162-audio-link" href="'+esc(url)+'" target="_blank" rel="noopener noreferrer">'+esc(name || 'Abrir áudio')+'</a></div>';
+    return box;
+  }
+  function convertAudioLinks(root){
+    root = root || document;
+    var scope = root.querySelectorAll ? root : document;
+    var links = Array.prototype.slice.call(scope.querySelectorAll('#chat-messages a'));
+    links.forEach(function(a){
+      if(a.closest('.chat-v162-audio-box')) return;
+      if(a.getAttribute('data-v162-checked') === '1') return;
+      var href = txt(a.getAttribute('href') || a.href || '');
+      var label = txt(a.textContent || a.getAttribute('download') || 'Áudio');
+      var blob = href + ' ' + label + ' ' + txt(a.getAttribute('data-name')||'') + ' ' + txt(a.getAttribute('download')||'');
+      if(!isAudioLike(blob)) { a.setAttribute('data-v162-checked','1'); return; }
+      var box = createPlayer(href, label.replace(/^\s*\S*\s*/, '') || 'Áudio gravado');
+      try { a.replaceWith(box); }
+      catch(e){ a.parentNode && a.parentNode.insertBefore(box,a); a.style.display='none'; }
+    });
+
+    // Segurança extra: se alguma mensagem antiga renderizar texto puro com URL de áudio, vira player também.
+    var msgs = Array.prototype.slice.call(scope.querySelectorAll('#chat-messages .chat-v103-msg'));
+    msgs.forEach(function(msg){
+      if(msg.querySelector('.chat-v162-audio-box,audio.chat-v153-audio-message')) return;
+      var raw = txt(msg.textContent||'');
+      if(!isAudioLike(raw)) return;
+      var m = raw.match(/(https?:\/\/\S+|data:audio\/[^\s]+)/i);
+      if(m && m[1]) msg.insertBefore(createPlayer(m[1], 'Áudio gravado'), msg.querySelector('.chat-v103-msg-time') || null);
+    });
+  }
+  function enhanceFromState(){
+    try{
+      var div = $('chat-messages'); if(!div) return;
+      convertAudioLinks(div);
+      // Se o render atual manteve dados em currentChatMessages, usa eles também para criar player pelo índice.
+      var list = [];
+      try { if(Array.isArray(currentChatMessages)) list = currentChatMessages; } catch(e){}
+      if(!list.length) return;
+      var articles = Array.prototype.slice.call(div.querySelectorAll('.chat-v103-msg'));
+      articles.forEach(function(el, idx){
+        if(el.querySelector('.chat-v162-audio-box,audio.chat-v153-audio-message')) return;
+        var m = list[idx] || {};
+        var f = m.file || {};
+        var url = txt(f.data || f.url || f.downloadURL || f.href || '');
+        var name = txt(f.name || 'Áudio gravado');
+        var type = txt(f.type || m.messageKind || '');
+        if(url && isAudioLike(type + ' ' + name + ' ' + url)){
+          var ref = el.querySelector('.chat-v103-msg-text') || el.querySelector('.chat-v103-msg-time');
+          el.insertBefore(createPlayer(url, name), ref || null);
+          Array.prototype.slice.call(el.querySelectorAll('a')).forEach(function(a){
+            var aBlob = txt(a.href||a.getAttribute('href')||'') + ' ' + txt(a.textContent||'');
+            if(isAudioLike(aBlob) && !a.closest('.chat-v162-audio-box')) a.remove();
+          });
+        }
+      });
+    }catch(e){ console.warn('Correção de áudio V162:', e); }
+  }
+  function markAudioBeforeSend(){
+    try{
+      if(typeof currentChatFile === 'undefined' || !currentChatFile) return;
+      var n = txt(currentChatFile.name), t = txt(currentChatFile.type), d = txt(currentChatFile.data);
+      if(isAudioLike(n + ' ' + t + ' ' + d)){
+        currentChatFile.name = n || ('audio_chat_' + Date.now() + '.webm');
+        if(!/^audio\//i.test(t)) currentChatFile.type = 'audio/webm';
+      }
+    }catch(e){}
+  }
+  function wrapRender(){
+    if(typeof window.renderChatMessages === 'function' && !window.renderChatMessages.__v162AudioWrapped){
+      var previous = window.renderChatMessages;
+      window.renderChatMessages = function(){
+        var out = previous.apply(this, arguments);
+        setTimeout(enhanceFromState, 20);
+        setTimeout(enhanceFromState, 160);
+        setTimeout(enhanceFromState, 500);
+        return out;
+      };
+      window.renderChatMessages.__v162AudioWrapped = true;
+    }
+  }
+  function wrapSend(){
+    if(typeof window.sendChatMessage === 'function' && !window.sendChatMessage.__v162AudioWrapped){
+      var previous = window.sendChatMessage;
+      window.sendChatMessage = function(){
+        markAudioBeforeSend();
+        return previous.apply(this, arguments);
+      };
+      window.sendChatMessage.__v162AudioWrapped = true;
+    }
+    if(typeof window.getCollection === 'function' && !window.getCollection.__v162AudioWrapped){
+      var oldGet = window.getCollection;
+      window.getCollection = function(name){
+        var col = oldGet.apply(this, arguments);
+        try{
+          if(name === 'concenal_chat' && col && typeof col.add === 'function' && !col.__v162AudioAddWrapped){
+            var oldAdd = col.add.bind(col);
+            col.add = function(data){
+              try{
+                if(data && data.file){
+                  var blob = txt(data.file.type) + ' ' + txt(data.file.name) + ' ' + txt(data.file.data || data.file.url);
+                  if(isAudioLike(blob)){
+                    data.messageKind = 'audio';
+                    if(!/^audio\//i.test(txt(data.file.type))) data.file.type = 'audio/webm';
+                    if(!txt(data.text)) data.text = '';
+                  }
+                }
+              }catch(e){}
+              return oldAdd(data);
+            };
+            col.__v162AudioAddWrapped = true;
+          }
+        }catch(e){}
+        return col;
+      };
+      window.getCollection.__v162AudioWrapped = true;
+    }
+  }
+  function installObserver(){
+    var div = $('chat-messages');
+    if(!div || div.__v162AudioObserver) return;
+    div.__v162AudioObserver = true;
+    try{
+      var mo = new MutationObserver(function(){ setTimeout(enhanceFromState, 30); });
+      mo.observe(div, {childList:true, subtree:true});
+    }catch(e){}
+  }
+  function boot(){ wrapRender(); wrapSend(); installObserver(); enhanceFromState(); }
+  document.addEventListener('DOMContentLoaded', function(){ setTimeout(boot,80); setTimeout(boot,700); setTimeout(boot,1800); });
+  document.addEventListener('click', function(ev){
+    if(ev.target && ev.target.closest && ev.target.closest('#chat-btn,.chat-v103-user,[onclick*="openChat"],[onclick*="setChatRecipient"]')) setTimeout(boot,180);
+  }, true);
+  setInterval(function(){ var m=$('modal-chat'); if(m && !m.classList.contains('hidden')) boot(); }, 1500);
+  boot();
+  console.log('CONCENAL V162 áudio do chat carregado');
+})();
+</script>
+
+
+
+<!-- PATCH V163: STATUS ENVIADO / LIDO NO CHAT + MARCAR LEITURA REAL -->
+<style>
+  .chat-v163-status{
+    display:inline-flex!important;
+    align-items:center!important;
+    gap:3px!important;
+    margin-left:8px!important;
+    padding:2px 7px!important;
+    border-radius:999px!important;
+    background:rgba(4,120,87,.10)!important;
+    color:#047857!important;
+    font-size:9px!important;
+    font-weight:900!important;
+    letter-spacing:.01em!important;
+    opacity:1!important;
+    vertical-align:middle!important;
+    white-space:nowrap!important;
+  }
+  .chat-v163-status.sent-only{background:rgba(100,116,139,.12)!important;color:#475569!important;}
+  .chat-v163-status.read-ok{background:rgba(16,185,129,.16)!important;color:#047857!important;}
+  body.dark-theme .chat-v163-status.sent-only{background:rgba(148,163,184,.20)!important;color:#cbd5e1!important;}
+  body.dark-theme .chat-v163-status.read-ok{background:rgba(16,185,129,.22)!important;color:#bbf7d0!important;}
+</style>
+<script>
+/* ================================================================
+   CONCENAL - V163
+   Correção pontual do chat: exibir status “Enviado” e “Lido”.
+   Também marca automaticamente como lida a mensagem recebida quando
+   a conversa está aberta, sem alterar layout, áudio ou permissões.
+   ================================================================ */
+(function(){
+  'use strict';
+  var markTimer=null, observer=null, busy=false;
+  function $(id){ return document.getElementById(id); }
+  function txt(v){ return (v===undefined || v===null) ? '' : String(v); }
+  function norm(v){ return txt(v).normalize('NFD').replace(/[\u0300-\u036f]/g,'').trim().toLowerCase(); }
+  function arr(v){ if(!v) return []; return Array.isArray(v) ? v : [v]; }
+  function flat(){ var out=[]; for(var i=0;i<arguments.length;i++){ arr(arguments[i]).forEach(function(x){ if(Array.isArray(x)) x.forEach(function(y){ if(txt(y).trim()) out.push(txt(y)); }); else if(txt(x).trim()) out.push(txt(x)); }); } return out; }
+  function uniq(a){ var seen={}; return (a||[]).map(txt).filter(function(x){ var k=norm(x); if(!k || seen[k]) return false; seen[k]=true; return true; }); }
+  function current(){
+    try{ if(typeof currentUser !== 'undefined' && currentUser) return currentUser; }catch(e){}
+    try{ if(window.__concenalRuntimeUser) return window.__concenalRuntimeUser; }catch(e){}
+    try{ var s=localStorage.getItem('concenal_v29_session') || localStorage.getItem('concenal_session') || ''; if(s) return JSON.parse(s); }catch(e){}
+    return null;
+  }
+  function aliasesOfUser(u){
+    u=u||{};
+    return uniq(flat(u.id,u.uid,u.userId,u.name,u.displayName,u.fullName,u.email,u.username,u.login,u.role,u.roleDesc));
+  }
+  function meAliases(){ return aliasesOfUser(current()); }
+  function meId(){ var u=current()||{}; return txt(u.id || u.uid || u.userId || u.username || u.email || u.name || ''); }
+  function msgFromAliases(m){
+    m=m||{};
+    return uniq(flat(m.fromAliases,m.senderAliases,m.authorAliases,m.from,m.fromId,m.senderId,m.authorId,m.fromName,m.senderName,m.authorName,m.fromEmail,m.fromUsername));
+  }
+  function msgReadAliases(m){
+    m=m||{};
+    return uniq(flat(m.readBy,m.readByIds,m.readByAliases,m.readByNames,m.seenBy,m.seenByIds,m.seenByAliases));
+  }
+  function intersects(a,b){
+    var set={}; (b||[]).map(norm).forEach(function(x){ if(x) set[x]=true; });
+    return (a||[]).map(norm).some(function(x){ return !!set[x]; });
+  }
+  function isFromMe(m){ return intersects(msgFromAliases(m), meAliases().concat(meId())); }
+  function statusFor(m){
+    var mine=meAliases().concat(meId()).map(norm).filter(Boolean);
+    var mineSet={}; mine.forEach(function(x){ mineSet[x]=true; });
+    var readers=msgReadAliases(m).map(norm).filter(Boolean);
+    var otherRead=readers.some(function(x){ return x && !mineSet[x]; });
+    if(otherRead || (m && m.readAt && readers.length>1)) return {text:'Lido', icon:'✓✓', cls:'read-ok'};
+    return {text:'Enviado', icon:'✓', cls:'sent-only'};
+  }
+  function visibleMessages(){
+    try{ if(Array.isArray(currentChatMessages)) return currentChatMessages.slice(); }catch(e){}
+    try{ if(window.__concenal_v163_last_messages && Array.isArray(window.__concenal_v163_last_messages)) return window.__concenal_v163_last_messages.slice(); }catch(e){}
+    return [];
+  }
+  function applyStatuses(){
+    var div=$('chat-messages'); if(!div) return;
+    var msgs=visibleMessages();
+    var arts=Array.prototype.slice.call(div.querySelectorAll('.chat-v103-msg'));
+    if(!arts.length || !msgs.length) return;
+    arts.forEach(function(el,idx){
+      var m=msgs[idx]; if(!m || !isFromMe(m)) return;
+      var timeEl=el.querySelector('.chat-v103-msg-time'); if(!timeEl) return;
+      var s=statusFor(m);
+      var st=timeEl.querySelector('.chat-v163-status');
+      if(!st){ st=document.createElement('span'); timeEl.appendChild(st); }
+      st.className='chat-v163-status '+s.cls;
+      st.textContent=s.icon+' '+s.text;
+      st.title=s.text==='Lido' ? 'Mensagem lida pelo destinatário' : 'Mensagem enviada';
+    });
+  }
+  function shouldMarkAsRead(m){
+    if(!m || !m.docId || /^local_/i.test(txt(m.docId))) return false;
+    if(isFromMe(m)) return false;
+    var mine=meAliases().concat(meId());
+    if(intersects(msgReadAliases(m), mine)) return false;
+    return true;
+  }
+  function markVisibleAsRead(){
+    if(busy) return;
+    var div=$('chat-messages');
+    var modal=$('modal-chat');
+    if(!div || (modal && modal.classList.contains('hidden'))) return;
+    var msgs=visibleMessages().filter(shouldMarkAsRead).slice(-80);
+    if(!msgs.length) return;
+    if(typeof firebase==='undefined' || typeof getCollection!=='function' || typeof db==='undefined' || !db) return;
+    busy=true;
+    try{
+      var batch=db.batch();
+      var aliases=uniq(meAliases().concat(meId())).slice(0,12);
+      msgs.forEach(function(m){
+        var ref=getCollection('concenal_chat').doc(m.docId);
+        var data={readAt:Date.now(), lastReadBy:meId()};
+        try{ data.readBy=firebase.firestore.FieldValue.arrayUnion.apply(firebase.firestore.FieldValue, aliases.length?aliases:[meId()]); }
+        catch(e){ data.readBy=firebase.firestore.FieldValue.arrayUnion(meId()); }
+        batch.set(ref,data,{merge:true});
+      });
+      batch.commit().catch(function(e){ console.warn('[V163] Não foi possível marcar lido:', e); }).finally(function(){ busy=false; setTimeout(applyStatuses,120); });
+    }catch(e){ busy=false; console.warn('[V163] Erro ao marcar lido:', e); }
+  }
+  function schedule(){
+    clearTimeout(markTimer);
+    markTimer=setTimeout(function(){ applyStatuses(); markVisibleAsRead(); },90);
+    setTimeout(applyStatuses,260);
+  }
+  function install(){
+    if(typeof window.renderChatMessages==='function' && !window.renderChatMessages.__v163StatusWrapped){
+      var previous=window.renderChatMessages;
+      window.renderChatMessages=function(allMessages){
+        try{ if(Array.isArray(allMessages)) window.__concenal_v163_last_messages=allMessages.slice(); }catch(e){}
+        var out=previous.apply(this,arguments);
+        schedule();
+        return out;
+      };
+      window.renderChatMessages.__v163StatusWrapped=true;
+    }
+    var div=$('chat-messages');
+    if(div && !observer){
+      observer=new MutationObserver(function(){ schedule(); });
+      observer.observe(div,{childList:true,subtree:true});
+    }
+    schedule();
+  }
+  window.__concenalApplyChatStatusV163=function(){ install(); schedule(); };
+  if(document.readyState==='loading') document.addEventListener('DOMContentLoaded',install); else install();
+  setTimeout(install,500);
+  setInterval(function(){ var div=$('chat-messages'); if(div){ if(!observer) install(); schedule(); } },2500);
+})();
+</script>
+
 </body>
 </html>
+
+<!-- V164 - Correção: remover barra global Matéria/Turma ao abrir Notas e Médias do professor -->
+<style id="concenal-v164-notas-sem-barra-duplicada-style">
+  body.v164-teacher-grades-clean #control-bar{
+    display:none!important;
+    visibility:hidden!important;
+    opacity:0!important;
+    pointer-events:none!important;
+    height:0!important;
+    min-height:0!important;
+    overflow:hidden!important;
+    border:0!important;
+    box-shadow:none!important;
+  }
+  body.v164-teacher-grades-clean #main-content{
+    display:block!important;
+    visibility:visible!important;
+    opacity:1!important;
+  }
+  body.v164-teacher-grades-clean #v122-module-bar{
+    display:block!important;
+    visibility:visible!important;
+    opacity:1!important;
+  }
+</style>
+<script id="concenal-v164-notas-sem-barra-duplicada">
+(function(){
+  'use strict';
+  if(window.__CONCENAL_V164_NOTAS_SEM_BARRA_DUPLICADA__) return;
+  window.__CONCENAL_V164_NOTAS_SEM_BARRA_DUPLICADA__ = true;
+
+  function $(id){ return document.getElementById(id); }
+  function txt(v){ return v == null ? '' : String(v).replace(/\s+/g,' ').trim(); }
+  function norm(v){ return txt(v).normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase(); }
+  function getUser(){ try{ return window.currentUser || currentUser || null; }catch(e){ return window.currentUser || null; } }
+  function roleOf(u){ return norm((u||{}).role || (u||{}).perfil || (u||{}).type || (u||{}).tipo || ''); }
+  function nameOf(u){ return txt((u||{}).displayName || (u||{}).name || (u||{}).fullName || (u||{}).username || ''); }
+  function accessOf(u){ return norm((u||{}).accessMode || (u||{}).accessLevel || ''); }
+  function isDirection(u){ return ['admin','coord','coordenador','coordenacao','direcao','direção','diretor','diretoria','secretaria','secretario'].indexOf(roleOf(u)) >= 0; }
+  function isTeacher(u){ var r=roleOf(u), n=norm(nameOf(u)); return ['teacher','professor','professora','docente'].indexOf(r)>=0 || /^professor\b/.test(n) || /^professora\b/.test(n) || (accessOf(u)==='developer' && !isDirection(u)); }
+  function teacherLogged(){ var app=$('app-screen'), u=getUser(); return !!(app && !app.classList.contains('hidden') && u && isTeacher(u) && !isDirection(u)); }
+
+  function currentMode(){
+    try{ if(window.appData && window.appData.currentMode) return txt(window.appData.currentMode); }catch(e){}
+    try{ if(typeof appData !== 'undefined' && appData.currentMode) return txt(appData.currentMode); }catch(e){}
+    return '';
+  }
+
+  function shouldHideGradesBar(){
+    if(!teacherLogged()) return false;
+    if(!document.body.classList.contains('v122-module')) return false;
+    var m = currentMode();
+    return m === 'grades' || m === 'notas' || m === 'notes';
+  }
+
+  function applyCleanState(){
+    if(shouldHideGradesBar()){
+      document.body.classList.add('v164-teacher-grades-clean');
+      var bar = $('control-bar');
+      if(bar){
+        bar.style.display = 'none';
+        bar.style.visibility = 'hidden';
+        bar.style.opacity = '0';
+        bar.style.pointerEvents = 'none';
+      }
+      var main = $('main-content');
+      if(main){
+        main.style.display = 'block';
+        main.style.visibility = 'visible';
+        main.style.opacity = '1';
+      }
+    }else{
+      document.body.classList.remove('v164-teacher-grades-clean');
+      var bar2 = $('control-bar');
+      if(bar2){
+        bar2.style.visibility = '';
+        bar2.style.opacity = '';
+        bar2.style.pointerEvents = '';
+        if(!document.body.classList.contains('v122-home')) bar2.style.display = '';
+      }
+    }
+  }
+
+  function patchOpenModule(){
+    if(typeof window.openModule !== 'function' || window.openModule.__v164NotasSemBarra) return;
+    var old = window.openModule;
+    window.openModule = function(mode){
+      var out = old.apply(this, arguments);
+      try{ if(window.appData) window.appData.currentMode = mode; }catch(e){}
+      setTimeout(applyCleanState, 0);
+      setTimeout(applyCleanState, 80);
+      setTimeout(applyCleanState, 220);
+      return out;
+    };
+    window.openModule.__v164NotasSemBarra = true;
+  }
+
+  function patchSwitchMode(){
+    if(typeof window.switchMode !== 'function' || window.switchMode.__v164NotasSemBarra) return;
+    var old = window.switchMode;
+    window.switchMode = function(mode){
+      var out = old.apply(this, arguments);
+      try{ if(window.appData) window.appData.currentMode = mode; }catch(e){}
+      setTimeout(applyCleanState, 0);
+      setTimeout(applyCleanState, 80);
+      return out;
+    };
+    window.switchMode.__v164NotasSemBarra = true;
+  }
+
+  document.addEventListener('click', function(ev){
+    var t = ev.target;
+    if(!t || !t.closest) return;
+    var mod = t.closest('[data-v159-mode], [data-v122-mode], .v122-module-card');
+    if(mod){
+      var mode = mod.getAttribute('data-v159-mode') || mod.getAttribute('data-v122-mode') || '';
+      try{ if(window.appData) window.appData.currentMode = mode; }catch(e){}
+      setTimeout(applyCleanState, 0);
+      setTimeout(applyCleanState, 120);
+    }
+    if(t.closest('#v159-back, #v122-back-btn, .v122-back-btn, .v132-back')){
+      document.body.classList.remove('v164-teacher-grades-clean');
+      var bar = $('control-bar');
+      if(bar){ bar.style.visibility=''; bar.style.opacity=''; bar.style.pointerEvents=''; }
+    }
+  }, true);
+
+  function boot(){ patchOpenModule(); patchSwitchMode(); applyCleanState(); }
+  boot();
+  document.addEventListener('DOMContentLoaded', function(){ boot(); setTimeout(boot,100); setTimeout(boot,400); });
+  setTimeout(boot,700);
+  setInterval(function(){ patchOpenModule(); patchSwitchMode(); applyCleanState(); }, 900);
+})();
+</script>
