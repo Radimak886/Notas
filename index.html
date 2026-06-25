@@ -17761,6 +17761,7 @@
 })();
 </script>
 
+
 <!-- V164 - Remove duplicações no chat: manter só status verdinho e só 1 áudio por mensagem -->
 <style id="concenal-v164-chat-dedupe-style">
   .chat-v153-status{ display:none !important; }
@@ -17880,5 +17881,243 @@
   }, 1200);
   install();
   console.log('CONCENAL V164 sem duplicação de status e áudio carregado');
+})();
+</script>
+
+
+<!-- V165 - Correção mobile: áudio com play visível + swipe responder funcionando -->
+<style id="concenal-v165-mobile-chat-fix-style">
+  @media (max-width: 767px){
+    #chat-messages .chat-v103-msg,
+    #chat-messages .chat-msg,
+    #chat-messages .chat-v157-swipeable{
+      touch-action: pan-y !important;
+      -webkit-user-select: none !important;
+      user-select: none !important;
+      overflow: visible !important;
+    }
+    .chat-v162-audio-box,
+    .chat-v165-audio-wrap{
+      width:100% !important;
+      max-width:100% !important;
+      display:flex !important;
+      align-items:center !important;
+      gap:10px !important;
+      padding:10px !important;
+      border-radius:16px !important;
+      background:rgba(255,255,255,.82) !important;
+    }
+    .chat-v165-audio-play{
+      width:46px !important;
+      height:46px !important;
+      border:none !important;
+      border-radius:999px !important;
+      background:#047857 !important;
+      color:#fff !important;
+      display:inline-flex !important;
+      align-items:center !important;
+      justify-content:center !important;
+      flex:0 0 46px !important;
+      font-size:18px !important;
+      box-shadow:0 4px 12px rgba(4,120,87,.25) !important;
+      -webkit-tap-highlight-color: transparent !important;
+    }
+    .chat-v165-audio-main{ flex:1 1 auto !important; min-width:0 !important; }
+    .chat-v165-audio-main audio,
+    .chat-v162-audio-box audio,
+    audio.chat-v153-audio-message{
+      width:100% !important;
+      min-width:0 !important;
+      height:42px !important;
+      display:block !important;
+      opacity:1 !important;
+      visibility:visible !important;
+    }
+    .chat-v165-audio-title{
+      display:block !important;
+      margin-top:6px !important;
+      font-size:11px !important;
+      font-weight:800 !important;
+      color:#047857 !important;
+      line-height:1.2 !important;
+    }
+    .chat-v165-swipe-hint{
+      position:absolute !important;
+      left:10px !important;
+      bottom:10px !important;
+      font-size:10px !important;
+      font-weight:800 !important;
+      color:#047857 !important;
+      opacity:.78 !important;
+      pointer-events:none !important;
+    }
+    body.dark-theme .chat-v162-audio-box,
+    body.dark-theme .chat-v165-audio-wrap{background:rgba(17,24,39,.78)!important;border-color:#065f46!important;}
+    body.dark-theme .chat-v165-audio-title,
+    body.dark-theme .chat-v165-swipe-hint{color:#86efac!important;}
+  }
+</style>
+<script id="concenal-v165-mobile-chat-fix-script">
+(function(){
+  'use strict';
+  if(window.__CONCENAL_V165_MOBILE_CHAT_FIX__) return;
+  window.__CONCENAL_V165_MOBILE_CHAT_FIX__ = true;
+
+  function $(id){ return document.getElementById(id); }
+  function txt(v){ return (v === undefined || v === null) ? '' : String(v); }
+  function isMobile(){ return window.matchMedia ? window.matchMedia('(max-width: 767px)').matches : window.innerWidth <= 767; }
+  function normTarget(t){ return !!(t && t.closest && t.closest('button,a,audio,input,textarea,select,label')); }
+
+  function enhanceAudio(){
+    if(!isMobile()) return;
+    var items = Array.prototype.slice.call(document.querySelectorAll('#chat-messages .chat-v162-audio-box, #chat-messages audio.chat-v153-audio-message'));
+    items.forEach(function(node){
+      try{
+        var box = node.classList && node.classList.contains('chat-v162-audio-box') ? node : null;
+        var audio = box ? box.querySelector('audio') : node;
+        if(!audio) return;
+        var host = box || audio.parentElement;
+        if(!host) return;
+
+        if(!host.classList.contains('chat-v165-audio-wrap')) host.classList.add('chat-v165-audio-wrap');
+
+        if(!host.getAttribute('data-v165-audio-enhanced')){
+          host.setAttribute('data-v165-audio-enhanced','1');
+          var play = document.createElement('button');
+          play.type = 'button';
+          play.className = 'chat-v165-audio-play';
+          play.innerHTML = '<i class="fas fa-play"></i>';
+
+          var main = document.createElement('div');
+          main.className = 'chat-v165-audio-main';
+
+          if(box){
+            var link = box.querySelector('.chat-v162-audio-link');
+            var title = document.createElement('span');
+            title.className = 'chat-v165-audio-title';
+            title.textContent = link ? (link.textContent || 'Áudio gravado') : 'Áudio gravado';
+            main.appendChild(audio);
+            main.appendChild(title);
+            box.innerHTML = '';
+            box.appendChild(play);
+            box.appendChild(main);
+          }else{
+            var parent = audio.parentElement;
+            if(parent){
+              var title2 = document.createElement('span');
+              title2.className = 'chat-v165-audio-title';
+              title2.textContent = 'Áudio gravado';
+              main.appendChild(audio);
+              main.appendChild(title2);
+              parent.insertBefore(play, audio);
+              parent.insertBefore(main, audio.nextSibling);
+            }
+          }
+
+          function sync(){
+            var playing = !audio.paused && !audio.ended;
+            play.innerHTML = playing ? '<i class="fas fa-pause"></i>' : '<i class="fas fa-play"></i>';
+          }
+          play.addEventListener('click', function(ev){
+            ev.preventDefault(); ev.stopPropagation();
+            try{
+              if(audio.paused || audio.ended) audio.play();
+              else audio.pause();
+            }catch(e){}
+            setTimeout(sync, 60);
+          }, {passive:false});
+          audio.addEventListener('play', sync);
+          audio.addEventListener('pause', sync);
+          audio.addEventListener('ended', sync);
+          sync();
+        }
+      }catch(e){}
+    });
+  }
+
+  function enhanceSwipe(){
+    if(!isMobile()) return;
+    var msgs = Array.prototype.slice.call(document.querySelectorAll('#chat-messages .chat-v103-msg'));
+    msgs.forEach(function(el){
+      if(el.__v165SwipeBound) return;
+      el.__v165SwipeBound = true;
+      el.style.touchAction = 'pan-y';
+      el.classList.add('chat-v157-swipeable');
+      if(!el.querySelector('.chat-v165-swipe-hint')){
+        var hint = document.createElement('span');
+        hint.className = 'chat-v165-swipe-hint';
+        hint.textContent = 'Deslize para responder';
+        el.appendChild(hint);
+      }
+
+      var startX=0, startY=0, dx=0, dy=0, active=false, lock=null;
+      function begin(ev){
+        if(normTarget(ev.target)) return;
+        var p = ev.touches && ev.touches[0] ? ev.touches[0] : ev;
+        startX = p.clientX; startY = p.clientY; dx = 0; dy = 0; active = true; lock = null;
+      }
+      function move(ev){
+        if(!active) return;
+        var p = ev.touches && ev.touches[0] ? ev.touches[0] : ev;
+        dx = p.clientX - startX;
+        dy = p.clientY - startY;
+        var ax = Math.abs(dx), ay = Math.abs(dy);
+        if(lock === null){
+          if(ax < 8 && ay < 8) return;
+          lock = ax > ay ? 'x' : 'y';
+        }
+        if(lock !== 'x') return;
+        if(ev.cancelable) ev.preventDefault();
+        var limited = Math.max(-72, Math.min(72, dx));
+        el.style.transition = 'none';
+        el.style.transform = 'translate3d(' + limited + 'px,0,0)';
+      }
+      function end(){
+        if(!active) return;
+        var trigger = lock === 'x' && Math.abs(dx) >= 34;
+        el.style.transition = 'transform .16s ease';
+        el.style.transform = 'translate3d(0,0,0)';
+        if(trigger){
+          try{ if(navigator.vibrate) navigator.vibrate(8); }catch(e){}
+          var btn = el.querySelector('.chat-v153-reply-btn');
+          if(btn) btn.click();
+        }
+        setTimeout(function(){ el.style.transition = ''; }, 220);
+        active = false; lock = null; dx = 0; dy = 0;
+      }
+      el.addEventListener('touchstart', begin, {passive:true});
+      el.addEventListener('touchmove', move, {passive:false});
+      el.addEventListener('touchend', end, {passive:true});
+      el.addEventListener('touchcancel', end, {passive:true});
+    });
+  }
+
+  function boot(){
+    enhanceAudio();
+    enhanceSwipe();
+  }
+
+  document.addEventListener('DOMContentLoaded', function(){
+    setTimeout(boot, 80);
+    setTimeout(boot, 500);
+    setTimeout(boot, 1400);
+  });
+  document.addEventListener('click', function(ev){
+    var t = ev.target;
+    if(t && t.closest && t.closest('#chat-btn,.chat-v103-user,[onclick*="openChat"],[onclick*="setChatRecipient"]')){
+      setTimeout(boot, 180);
+      setTimeout(boot, 700);
+    }
+  }, true);
+  try{
+    var mo = new MutationObserver(function(){ setTimeout(boot, 40); });
+    mo.observe(document.body, { childList:true, subtree:true });
+  }catch(e){}
+  setInterval(function(){
+    var modal = $('modal-chat');
+    if(modal && !modal.classList.contains('hidden')) boot();
+  }, 1500);
+  boot();
+  console.log('CONCENAL V165 mobile áudio + swipe carregado');
 })();
 </script>
